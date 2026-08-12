@@ -1,0 +1,29 @@
+{
+  "name": "FlipLauncher Android Dev",
+  "build": { "dockerfile": "Dockerfile", "context": ".." },
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "ANDROID_HOME": "/opt/android-sdk",
+    "ANDROID_SDK_ROOT": "/opt/android-sdk",
+    "JAVA_HOME": "/usr/lib/jvm/java-21-openjdk-amd64",
+    "CODEX_HOME": "/home/vscode/.codex"
+  },
+  "mounts": [
+    "source=fliplauncher-gradle-cache,target=/home/vscode/.gradle,type=volume",
+    "source=fliplauncher-android-cache,target=/home/vscode/.android,type=volume",
+    "source=fliplauncher-codex-home,target=/home/vscode/.codex,type=volume",
+    "source=d:\\codex-settings,target=/mnt/d/codex-settings,type=bind"
+  ],
+  "runArgs": ["--add-host=host.docker.internal:host-gateway"],
+  "customizations": {
+    "vscode": {
+      "extensions": ["vscjava.vscode-java-pack", "fwcd.kotlin", "vscjava.vscode-gradle", "ms-azuretools.vscode-docker"],
+      "settings": {
+        "java.configuration.runtimes": [{ "name": "JavaSE-21", "path": "/usr/lib/jvm/java-21-openjdk-amd64", "default": true }],
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+  "postCreateCommand": "bash -lc 'codex --version && sdkmanager --list_installed'",
+  "postStartCommand": "bash -lc 'sudo chown -R vscode:vscode /home/vscode/.codex && if [ -f .devcontainer/scripts/sync-codex-settings.sh ]; then bash .devcontainer/scripts/sync-codex-settings.sh; fi'"
+}

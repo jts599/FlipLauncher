@@ -1,0 +1,20 @@
+# Node.js dependencies and local diagnostics
+node_modules/
+npm-debug.log*
+
+# Gradle and Android build output
+.gradle/
+build/
+app/build/
+.kotlin/
+.externalNativeBuild/
+.cxx/
+local.properties
+
+# IDE workspace metadata
+.idea/
+*.iml
+
+# Platform-specific filesystem metadata
+.DS_Store
+Thumbs.db

@@ -1,0 +1,291 @@
+/*
+ * FlipLauncher HTML mockup styles.
+ * Defines the visual language for a flip-phone-inspired launcher prototype.
+ */
+
+:root {
+  --bg: #f4efe6;
+  --panel: #12110f;
+  --panel-soft: #201d19;
+  --screen: #efe6d4;
+  --screen-shadow: #c4b396;
+  --accent: #d4652f;
+  --accent-strong: #8c2f1c;
+  --ink: #1b1815;
+  --muted: #6e6458;
+  --line: rgba(27, 24, 21, 0.14);
+  --tile: rgba(255, 255, 255, 0.45);
+  --tile-active: #1d4d46;
+  --tile-active-ink: #f6f2eb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(94, 104, 81, 0.18), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(20, 24, 18, 0.22), transparent 32%),
+    linear-gradient(160deg, #c8c4b6 0%, #a7a18f 100%);
+  display: grid;
+  place-items: center;
+  padding: 2rem 1rem;
+}
+
+.prototype-shell {
+  display: grid;
+  place-items: center;
+}
+
+.phone {
+  position: relative;
+  width: 390px;
+  height: 844px;
+  flex: 0 0 auto;
+  padding: 0.75rem 0.75rem 0.9rem;
+  border-radius: 2.25rem;
+  background: linear-gradient(180deg, #242821 0%, #11130f 100%);
+  box-shadow: 0 24px 80px rgba(16, 18, 14, 0.34);
+}
+
+.speaker-slot {
+  width: 4.5rem;
+  height: 0.35rem;
+  margin: 0 auto 0.75rem;
+  border-radius: 999px;
+  background: #050505;
+}
+
+.phone-body {
+  height: calc(100% - 1.1rem);
+  display: grid;
+  grid-template-rows: 0.74fr auto 1.12fr;
+  gap: 0.85rem;
+}
+
+.screen,
+.keypad {
+  border-radius: 1.5rem;
+}
+
+.screen {
+  padding: 0.8rem;
+  background: linear-gradient(180deg, #33382e 0%, #20241d 100%);
+  box-shadow: inset 0 0 0 1px rgba(246, 255, 220, 0.06);
+}
+
+.screen-bezel {
+  width: 100%;
+  height: 100%;
+  padding: 0.7rem;
+  border-radius: 1rem;
+  background: linear-gradient(180deg, #0f110d 0%, #1b1e18 100%);
+  overflow: hidden;
+}
+
+.screen-surface {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  border-radius: 0.45rem;
+  background:
+    linear-gradient(rgba(40, 46, 34, 0.18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(40, 46, 34, 0.14) 1px, transparent 1px),
+    linear-gradient(180deg, #b8c49a 0%, #97a77b 100%);
+  background-size: 100% 8px, 8px 100%, 100% 100%;
+  box-shadow:
+    inset 0 0 0 2px rgba(46, 54, 36, 0.35),
+    inset 0 0 36px rgba(210, 230, 170, 0.18);
+}
+
+.screen-content {
+  display: grid;
+  align-content: start;
+  padding: 0.9rem 1rem 0.5rem;
+  font-family: "IBM Plex Sans", sans-serif;
+  color: rgba(40, 46, 34, 0.96);
+}
+
+.status-layout {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 1rem;
+}
+
+.time-panel {
+  display: grid;
+  align-content: start;
+  gap: 0.3rem;
+}
+
+.time-display,
+.battery-display,
+.weather-icon {
+  display: block;
+}
+
+.time-display {
+  font-size: 3.1rem;
+  line-height: 0.9;
+  font-weight: 700;
+  letter-spacing: -0.08em;
+}
+
+.battery-display {
+  font-size: 0.98rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.weather-panel {
+  display: grid;
+  justify-items: center;
+  gap: 0.2rem;
+  text-align: center;
+  color: rgba(40, 46, 34, 0.96);
+}
+
+.weather-current {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.weather-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.weather-range {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.weather-temp {
+  font-size: 3rem;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -0.06em;
+}
+
+.screen-actions {
+  position: absolute;
+  left: -1.35rem;
+  right: -1.35rem;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: center;
+  min-height: 3rem;
+  padding: 0.4rem 1rem 0.55rem;
+  border-top: 1px solid rgba(46, 54, 36, 0.24);
+  background: linear-gradient(180deg, rgba(151, 167, 123, 0), rgba(118, 131, 95, 0.28));
+  font-family: "IBM Plex Sans", sans-serif;
+  font-size: 1.55rem;
+  font-weight: 700;
+  color: rgba(40, 46, 34, 0.96);
+  justify-items: center;
+}
+
+.screen-actions span {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  text-align: center;
+}
+
+.action-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.action-buttons button {
+  min-height: 2.9rem;
+  border: 1px solid rgba(191, 204, 165, 0.16);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #0a0c09 0%, #171914 100%);
+  box-shadow: inset 0 1px 0 rgba(245, 255, 228, 0.04);
+  position: relative;
+}
+
+.action-bar::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 45%;
+  height: 0.45rem;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+}
+
+.action-bar-1::after {
+  background: #d84f3f;
+}
+
+.action-bar-2::after {
+  background: #d5a631;
+}
+
+.action-bar-3::after {
+  background: #75a84a;
+}
+
+.keypad {
+  padding: 1rem 0.9rem 1.1rem;
+  background: linear-gradient(180deg, #050605 0%, #121411 100%);
+  box-shadow: inset 0 0 0 1px rgba(210, 230, 170, 0.06);
+}
+
+.keypad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.keypad-grid button {
+  min-height: 5.3rem;
+  padding: 0.5rem 0.35rem 0.7rem;
+  border: 1px solid rgba(191, 204, 165, 0.16);
+  border-radius: 1.15rem;
+  background:
+    radial-gradient(circle at top, rgba(226, 238, 193, 0.08), transparent 42%),
+    linear-gradient(180deg, #0a0c09 0%, #171914 100%);
+  color: #d7e2be;
+  font-family: "Press Start 2P", monospace;
+  font-size: 1.55rem;
+  font-weight: 400;
+  line-height: 1;
+  box-shadow: inset 0 1px 0 rgba(245, 255, 228, 0.04);
+  text-shadow: 0 0 12px rgba(215, 226, 190, 0.08);
+}
+
+.keypad-grid span {
+  display: block;
+  margin-top: 0.55rem;
+  font-size: 0.5rem;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  color: #a8b48f;
+}
+
+@media (max-width: 920px) {
+  .prototype-shell {
+    justify-items: center;
+  }
+}
+
+@media (max-width: 560px) {
+  .phone {
+    width: 390px;
+    height: 844px;
+  }
+}
