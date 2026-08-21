@@ -25,5 +25,5 @@
     }
   },
   "postCreateCommand": "bash -lc 'codex --version && sdkmanager --list_installed'",
-  "postStartCommand": "bash -lc 'sudo chown -R vscode:vscode /home/vscode/.codex && if [ -f .devcontainer/scripts/sync-codex-settings.sh ]; then bash .devcontainer/scripts/sync-codex-settings.sh; fi'"
+  "postStartCommand": "bash -lc 'sudo chown -R vscode:vscode /home/vscode/.android /home/vscode/.codex /home/vscode/.gradle && if [ -f .devcontainer/scripts/sync-codex-settings.sh ]; then bash .devcontainer/scripts/sync-codex-settings.sh; fi'"
 }

@@ -9,11 +9,9 @@ import android.text.format.DateFormat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -33,18 +31,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -53,7 +49,7 @@ import java.util.Date
 
 private const val MillisPerMinute = 60_000L
 private const val UnknownBatteryLevel = -1
-private val PhoneAspectRatio = 390f / 844f
+private val CellSignalBarHeights = listOf(6.dp, 10.dp, 14.dp, 18.dp)
 private val KeyLabels = listOf(
     KeyLabel("1"), KeyLabel("2", "ABC"), KeyLabel("3", "DEF"),
     KeyLabel("4", "GHI"), KeyLabel("5", "JKL"), KeyLabel("6", "MNO"),
@@ -70,35 +66,17 @@ fun FlipLauncherApp() {
     val status = rememberLauncherStatus()
 
     FlipLauncherTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Brush.linearGradient(listOf(FlipColors.BackdropStart, FlipColors.BackdropEnd))),
-            contentAlignment = Alignment.Center,
-        ) {
-            BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 12.dp, vertical = 16.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                val phoneHeight = minOf(maxHeight, maxWidth / PhoneAspectRatio)
-                FlipPhoneFrame(status = status, height = phoneHeight)
-            }
-        }
+        FlipPhoneFrame(status = status, modifier = Modifier.fillMaxSize())
     }
 }
 
-/** Draws the handset enclosure and arranges its screen, quick bars, and keypad. */
+/** Draws the full-screen handset enclosure and arranges its screen, quick bars, and keypad. */
 @Composable
-private fun FlipPhoneFrame(status: LauncherStatus, height: Dp) {
+private fun FlipPhoneFrame(status: LauncherStatus, modifier: Modifier = Modifier) {
     Surface(
-        modifier = Modifier
-            .height(height)
-            .aspectRatio(PhoneAspectRatio)
-            .shadow(24.dp, RoundedCornerShape(36.dp)),
+        modifier = modifier,
         color = Color.Transparent,
-        shape = RoundedCornerShape(36.dp),
+        shape = RectangleShape,
     ) {
         Column(
             modifier = Modifier
@@ -165,50 +143,58 @@ private fun DisplayPanel(status: LauncherStatus, modifier: Modifier = Modifier) 
 /** Draws the LCD texture, status values, and inactive screen-action glyphs. */
 @Composable
 private fun ScreenSurface(status: LauncherStatus) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(6.dp))
-            .background(Brush.verticalGradient(listOf(FlipColors.ScreenTop, FlipColors.ScreenBottom)))
-            .lcdGrid()
-            .padding(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 8.dp),
+            .background(Brush.verticalGradient(listOf(FlipColors.ScreenTop, FlipColors.ScreenBottom))),
     ) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Column {
-                Text(
-                    text = status.timeText,
-                    color = FlipColors.ScreenInk,
-                    fontSize = 48.sp,
-                    lineHeight = 44.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-4).sp,
-                )
-                Text(
-                    text = status.batteryText,
-                    color = FlipColors.ScreenInk,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.2.sp,
-                )
-            }
-            WeatherReadout()
+        BatteryReadout(
+            batteryText = status.batteryText,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = 16.dp, top = 14.dp),
+        )
+        CellSignalReadout(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(end = 16.dp, top = 14.dp),
+        )
+        Column(
+            modifier = Modifier.align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = status.timeText,
+                color = FlipColors.ScreenInk,
+                fontSize = 48.sp,
+                lineHeight = 44.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-4).sp,
+            )
+            Text(
+                text = status.dateText,
+                color = FlipColors.ScreenInk.copy(alpha = 0.62f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.8.sp,
+            )
         }
-        Spacer(Modifier.weight(1f))
-        ScreenActions()
+        ScreenActions(modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
 
-/** Renders the placeholder weather data from the visual reference without any network dependency. */
+/** Renders a decorative cellular signal readout without querying device telephony services. */
 @Composable
-private fun WeatherReadout() {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = "☀", color = FlipColors.ScreenInk, fontSize = 30.sp)
-            Spacer(Modifier.width(5.dp))
-            Text(text = "84°", color = FlipColors.ScreenInk, fontSize = 42.sp, fontWeight = FontWeight.Bold)
-        }
+private fun CellSignalReadout(modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CellSignalBars()
         Text(
-            text = "H:88° L:72°",
+            text = "LTE",
             color = FlipColors.ScreenInk,
             fontSize = 9.sp,
             fontWeight = FontWeight.Bold,
@@ -217,17 +203,102 @@ private fun WeatherReadout() {
     }
 }
 
+/** Renders the battery charge percentage beside a stylized battery outline. */
+@Composable
+private fun BatteryReadout(batteryText: String, modifier: Modifier = Modifier) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        BatteryIcon()
+        Spacer(Modifier.width(5.dp))
+        Text(
+            text = batteryText,
+            color = FlipColors.ScreenInk,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.2.sp,
+        )
+    }
+}
+
+/** Draws the static battery silhouette used beside the live charge percentage. */
+@Composable
+private fun BatteryIcon() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Surface(
+            modifier = Modifier
+                .width(20.dp)
+                .height(11.dp),
+            shape = RectangleShape,
+            color = Color.Transparent,
+            border = androidx.compose.foundation.BorderStroke(1.dp, FlipColors.ScreenInk),
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(2.dp)
+                    .fillMaxSize()
+                    .background(FlipColors.ScreenInk),
+            )
+        }
+        Box(
+            modifier = Modifier
+                .width(2.dp)
+                .height(5.dp)
+                .background(FlipColors.ScreenInk),
+        )
+    }
+}
+
+/** Draws four stepped blocks to give the cellular signal meter a low-resolution LCD appearance. */
+@Composable
+private fun CellSignalBars() {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        CellSignalBarHeights.forEach { barHeight ->
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(barHeight)
+                    .background(FlipColors.ScreenInk),
+            )
+        }
+    }
+}
+
 /** Renders decorative search, apps, and settings glyphs at the display's bottom edge. */
 @Composable
-private fun ScreenActions() {
+private fun ScreenActions(modifier: Modifier = Modifier) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceAround,
-        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(42.dp)
+            .topBorder(FlipColors.ScreenInk.copy(alpha = 0.38f)),
     ) {
-        listOf("⌕", "▤", "⚙").forEach { glyph ->
-            Text(text = glyph, color = FlipColors.ScreenInk, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+        listOf("⌕", "▤", "⚙").forEachIndexed { index, glyph ->
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxSize()
+                    .insideDivider(index, FlipColors.ScreenInk.copy(alpha = 0.38f))
+                    .semantics { contentDescription = "Inactive screen action ${index + 1}" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(text = glyph, color = FlipColors.ScreenInk, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+            }
         }
+    }
+}
+
+/** Draws the top boundary for the screen action strip without enclosing its outer edges. */
+private fun Modifier.topBorder(color: Color): Modifier = drawBehind {
+    drawLine(color, Offset(0f, 0f), Offset(size.width, 0f), strokeWidth = 1.dp.toPx())
+}
+
+/** Draws a divider before every screen action except the leftmost action. */
+private fun Modifier.insideDivider(index: Int, color: Color): Modifier {
+    if (index == 0) return this
+    return drawBehind {
+        drawLine(color, Offset(0f, 0f), Offset(0f, size.height), strokeWidth = 1.dp.toPx())
     }
 }
 
@@ -270,8 +341,7 @@ private fun Keypad(modifier: Modifier = Modifier) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 14.dp, vertical = 16.dp)
-                .background(Brush.verticalGradient(listOf(Color(0xFF050605), FlipColors.HousingBottom)), RoundedCornerShape(24.dp)),
+                .padding(horizontal = 14.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             KeyLabels.chunked(3).forEach { row ->
@@ -294,24 +364,27 @@ private fun KeypadKey(key: KeyLabel, modifier: Modifier = Modifier) {
         color = Color.Transparent,
         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.09f)),
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Brush.verticalGradient(listOf(FlipColors.KeyTop, FlipColors.KeyBottom)))
-                .padding(top = 9.dp, bottom = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+                .padding(horizontal = 6.dp, vertical = 8.dp),
         ) {
             Text(
                 text = key.primary,
+                modifier = Modifier.align(Alignment.Center),
                 color = FlipColors.KeyText,
-                fontSize = 23.sp,
+                fontSize = 28.sp,
                 fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
             )
             key.secondary?.let {
-                Spacer(Modifier.height(7.dp))
                 Text(
                     text = it,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(top = 42.dp),
                     color = FlipColors.KeySubtext,
                     fontSize = 8.sp,
                     letterSpacing = 1.4.sp,
@@ -325,21 +398,28 @@ private fun KeypadKey(key: KeyLabel, modifier: Modifier = Modifier) {
 /**
  * Holds the live system values required by the mockup's status screen.
  *
- * @property timeText Localized current time for the upper-left LCD readout.
+ * @property timeText Localized current time for the centered LCD readout.
+ * @property dateText Localized current date shown beneath the centered time.
  * @property batteryText Formatted battery percentage, or an unknown-state label.
  */
-private data class LauncherStatus(val timeText: String, val batteryText: String)
+private data class LauncherStatus(
+    val timeText: String,
+    val dateText: String,
+    val batteryText: String,
+)
 
 /** Observes the local clock and battery broadcasts while the launcher composition is visible. */
 @Composable
 private fun rememberLauncherStatus(): LauncherStatus {
     val context = LocalContext.current
     var timeText by remember(context) { mutableStateOf(formattedTime(context)) }
-    var batteryText by remember { mutableStateOf("BAT --%") }
+    var dateText by remember(context) { mutableStateOf(formattedDate(context)) }
+    var batteryText by remember { mutableStateOf("--%") }
 
     LaunchedEffect(context) {
         while (true) {
             timeText = formattedTime(context)
+            dateText = formattedDate(context)
             delay(delayUntilNextMinute(System.currentTimeMillis()))
         }
     }
@@ -354,11 +434,14 @@ private fun rememberLauncherStatus(): LauncherStatus {
         batteryText = intent?.batteryText() ?: batteryText
         onDispose { context.unregisterReceiver(receiver) }
     }
-    return LauncherStatus(timeText, batteryText)
+    return LauncherStatus(timeText, dateText, batteryText)
 }
 
 /** Formats the current time using the user's Android 12/24-hour preference. */
 private fun formattedTime(context: Context): String = DateFormat.getTimeFormat(context).format(Date())
+
+/** Formats the current date using the user's locale preference. */
+private fun formattedDate(context: Context): String = DateFormat.getDateFormat(context).format(Date())
 
 /** Returns the positive duration until the next minute boundary. */
 private fun delayUntilNextMinute(currentTimeMillis: Long): Long =
@@ -368,7 +451,7 @@ private fun delayUntilNextMinute(currentTimeMillis: Long): Long =
 private class BatteryReceiver(private val onBatteryChanged: (String) -> Unit) : BroadcastReceiver() {
     /** Delivers the current battery percentage. The broadcast can be absent on unusual devices. */
     override fun onReceive(context: Context?, intent: Intent?) {
-        onBatteryChanged(intent?.batteryText() ?: "BAT --%")
+    onBatteryChanged(intent?.batteryText() ?: "--%")
     }
 }
 
@@ -376,24 +459,6 @@ private class BatteryReceiver(private val onBatteryChanged: (String) -> Unit) : 
 private fun Intent.batteryText(): String {
     val level = getIntExtra(BatteryManager.EXTRA_LEVEL, UnknownBatteryLevel)
     val scale = getIntExtra(BatteryManager.EXTRA_SCALE, UnknownBatteryLevel)
-    if (level < 0 || scale <= 0) return "BAT --%"
-    return "BAT ${level * 100 / scale}%"
-}
-
-/** Adds the fine scanline grid that gives the Compose display an LCD appearance. */
-private fun Modifier.lcdGrid(): Modifier = drawBehind {
-    val verticalSpacing = 8.dp.toPx()
-    val horizontalSpacing = 8.dp.toPx()
-    val lineColor = FlipColors.ScreenInk.copy(alpha = 0.14f)
-    var y = 0f
-    while (y < size.height) {
-        drawLine(lineColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
-        y += verticalSpacing
-    }
-    var x = 0f
-    while (x < size.width) {
-        drawLine(lineColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
-        x += horizontalSpacing
-    }
-    drawRoundRect(FlipColors.ScreenInk.copy(alpha = 0.35f), style = Stroke(width = 2.dp.toPx()))
+    if (level < 0 || scale <= 0) return "--%"
+    return "${level * 100 / scale}%"
 }
