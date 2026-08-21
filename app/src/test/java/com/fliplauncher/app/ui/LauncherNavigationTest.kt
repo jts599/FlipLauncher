@@ -8,6 +8,13 @@ import org.junit.Test
 
 /** Exercises pure grid transitions and controller-level editor navigation with in-memory fakes. */
 class LauncherNavigationTest {
+    /** Locks the intentionally curated icon library to the requested sixty choices. */
+    @Test
+    fun favoriteIconLibraryContainsExactlySixtyChoices() {
+        assertEquals(60, FavoriteIcon.values().size)
+        assertEquals(true, FavoriteIcon.values().contains(FavoriteIcon.Bird))
+    }
+
     /** Confirms the Search backspace action removes one digit instead of clearing the query. */
     @Test
     fun searchBackspaceRemovesOneDigit() {
@@ -33,6 +40,46 @@ class LauncherNavigationTest {
     @Test
     fun searchEntryWindowStartsAtFirstResult() {
         assertEquals(0, searchResultWindowStart(7, SearchMode.Entry))
+    }
+
+    /** Confirms OK changes keyboard format and multi-press cycles a repeated key. */
+    @Test
+    fun keyboardSettingControlsSearchEntry() {
+        val controller = controller()
+        controller.pressSoftAction(SoftAction.Settings)
+        controller.pressKey("OK")
+        controller.pressSoftAction(SoftAction.Search)
+
+        controller.pressKey("2")
+        controller.pressKey("2")
+
+        assertEquals(SearchKeyboardFormat.MultiPress, controller.state.settings.searchKeyboardFormat)
+        assertEquals("B", controller.state.searchDigits)
+    }
+
+    /** Confirms the second Settings row toggles touch launch and survives Home navigation. */
+    @Test
+    fun touchSettingSurvivesReturningHome() {
+        val controller = controller()
+        controller.pressSoftAction(SoftAction.Settings)
+        controller.pressKey("↓")
+        controller.pressKey("OK")
+
+        controller.pressSoftAction(SoftAction.Home)
+
+        assertEquals(true, controller.state.settings.touchToLaunchShortcuts)
+    }
+
+    /** Confirms Settings navigation reaches and stops on the launcher-selection action. */
+    @Test
+    fun settingsNavigationStopsAtChangeLauncher() {
+        val base = LauncherUiState(screen = LauncherScreen.Settings)
+
+        val second = reduceNavigation(base, NavigationDirection.Down, emptyList())
+        val third = reduceNavigation(second, NavigationDirection.Down, emptyList())
+        val pastThird = reduceNavigation(third, NavigationDirection.Down, emptyList())
+
+        assertEquals(2, pastThird.selectedSettingIndex)
     }
 
     /** Confirms editor focus stops at its first and final vertically arranged properties. */
@@ -123,9 +170,16 @@ class LauncherNavigationTest {
     private fun controller(): LauncherController = LauncherController(
         scope = CoroutineScope(Dispatchers.Unconfined),
         favoritesRepository = FakeFavoriteRepository,
+        settingsRepository = FakeSettingsRepository,
         appCatalog = FakeAppCatalog,
         navigator = FakeNavigator,
     )
+}
+
+/** Keeps setting tests deterministic without Android DataStore. */
+private object FakeSettingsRepository : LauncherSettingsRepository {
+    override suspend fun load(): LauncherSettings = LauncherSettings()
+    override suspend fun save(settings: LauncherSettings) = Unit
 }
 
 /** Supplies deterministic seed favorites without external storage. */
@@ -145,4 +199,5 @@ private object FakeNavigator : ExternalNavigator {
     override fun launchFavorite(target: FavoriteLaunchTarget): HandoffResult = HandoffResult.Started
     override fun openDialer(number: String): HandoffResult = HandoffResult.Started
     override fun openTextMessage(number: String): HandoffResult = HandoffResult.Started
+    override fun openHomeSettings(): HandoffResult = HandoffResult.Started
 }

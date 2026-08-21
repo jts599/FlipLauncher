@@ -63,6 +63,53 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Textsms
 import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Note
+import androidx.compose.material.icons.filled.SmartDisplay
+import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.Podcasts
+import androidx.compose.material.icons.filled.SportsEsports
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.Newspaper
+import androidx.compose.material.icons.filled.FlutterDash
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Work
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.Coffee
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.DirectionsBike
+import androidx.compose.material.icons.filled.Train
+import androidx.compose.material.icons.filled.Flight
+import androidx.compose.material.icons.filled.Hotel
+import androidx.compose.material.icons.filled.Park
+import androidx.compose.material.icons.filled.LocalGasStation
+import androidx.compose.material.icons.filled.LocalHospital
+import androidx.compose.material.icons.filled.Medication
+import androidx.compose.material.icons.filled.Emergency
+import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -107,6 +154,7 @@ private const val UnknownBatteryLevel = -1
 private const val QuickLaunchColumnCount = 3
 private const val QuickLaunchPageSize = 6
 private const val SearchResultWindowSize = 4
+private const val FavoriteIconPageSize = 12
 private val CellSignalBarHeights = listOf(6.dp, 10.dp, 14.dp, 18.dp)
 private val KeyLabels = listOf(
     KeyLabel("1"), KeyLabel("2", "ABC"), KeyLabel("3", "DEF"),
@@ -143,7 +191,13 @@ fun FlipLauncherApp() {
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     val controller = remember(context, scope) {
-        LauncherController(scope, DataStoreFavoriteRepository(context), AndroidLaunchableAppCatalog(context), AndroidExternalNavigator(context))
+        LauncherController(
+            scope,
+            DataStoreFavoriteRepository(context),
+            DataStoreLauncherSettingsRepository(context),
+            AndroidLaunchableAppCatalog(context),
+            AndroidExternalNavigator(context),
+        )
     }
     val status = rememberLauncherStatus()
     LaunchedEffect(controller) { controller.load() }
@@ -344,8 +398,8 @@ private fun LauncherLcdContent(status: LauncherStatus, controller: LauncherContr
     when (state.screen) {
         LauncherScreen.Home -> HomeLcdContent(status, state.message, modifier)
         LauncherScreen.Search -> SearchLcdContent(state, controller.filteredApps(), modifier)
-        LauncherScreen.QuickLaunch -> QuickLaunchLcdContent(state, controller.favorites, modifier)
-        LauncherScreen.Settings -> FavoritesLcdContent("SETTINGS", state, controller.favorites, modifier)
+        LauncherScreen.QuickLaunch -> QuickLaunchLcdContent(state, controller.favorites, controller::tapFavorite, modifier)
+        LauncherScreen.Settings -> SettingsLcdContent(state, modifier)
         LauncherScreen.FavoriteEditor -> FavoriteEditorLcdContent(state, controller, modifier)
         LauncherScreen.Dialer -> DialerLcdContent(state, modifier)
     }
@@ -377,7 +431,7 @@ private fun SearchLcdContent(state: LauncherUiState, apps: List<LaunchableApp>, 
             verticalArrangement = Arrangement.spacedBy(4.dp),
             horizontalAlignment = Alignment.Start,
         ) {
-            SearchField(state.searchDigits)
+            SearchField(state.searchDigits, state.settings.searchKeyboardFormat)
             apps.drop(firstVisibleIndex).take(SearchResultWindowSize).forEachIndexed { index, app ->
                 SearchResultRow(
                     label = app.label,
@@ -403,7 +457,8 @@ internal fun searchResultWindowStart(selectedIndex: Int, mode: SearchMode): Int 
 
 /** Draws the outlined T9 query field at the top of the search display. */
 @Composable
-private fun SearchField(digits: String) {
+private fun SearchField(query: String, format: SearchKeyboardFormat) {
+    val placeholder = if (format == SearchKeyboardFormat.T9) "TYPE 2–9" else "TYPE LETTERS"
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -415,8 +470,8 @@ private fun SearchField(digits: String) {
         Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(15.dp), tint = FlipColors.ScreenInk)
         Spacer(Modifier.width(7.dp))
         Text(
-            text = digits.ifEmpty { "TYPE 2–9" },
-            color = FlipColors.ScreenInk.copy(alpha = if (digits.isEmpty()) 0.58f else 1f),
+            text = query.ifEmpty { placeholder },
+            color = FlipColors.ScreenInk.copy(alpha = if (query.isEmpty()) 0.58f else 1f),
             fontSize = 15.sp,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
@@ -468,6 +523,7 @@ private fun SearchEmptyState() {
 private fun QuickLaunchLcdContent(
     state: LauncherUiState,
     favorites: List<QuickLaunchFavorite>,
+    onFavoriteTap: (Int) -> Unit,
     modifier: Modifier,
 ) {
     val pageIndex = state.selectedFavoriteIndex / QuickLaunchPageSize
@@ -489,6 +545,8 @@ private fun QuickLaunchLcdContent(
                                 favorite = favorite,
                                 focused = firstItemIndex + rowIndex * QuickLaunchColumnCount + columnIndex == state.selectedFavoriteIndex,
                                 modifier = Modifier.weight(1f),
+                                onClick = { onFavoriteTap(firstItemIndex + rowIndex * QuickLaunchColumnCount + columnIndex) },
+                                touchEnabled = state.settings.touchToLaunchShortcuts,
                             )
                         }
                     }
@@ -532,29 +590,29 @@ private fun QuickLaunchPageIndicator(pageIndex: Int, pageCount: Int, modifier: M
     }
 }
 
-/** Renders the compact six-slot list used by the Settings page. */
+/** Renders the two launcher-wide preferences as bold keypad-focused rows. */
 @Composable
-private fun FavoritesLcdContent(title: String, state: LauncherUiState, favorites: List<QuickLaunchFavorite>, modifier: Modifier) {
-    val pageIndex = state.selectedFavoriteIndex / QuickLaunchPageSize
-    val firstItemIndex = pageIndex * QuickLaunchPageSize
-    Box(modifier.fillMaxWidth()) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            LcdTitle(title)
-            favorites.drop(firstItemIndex).take(QuickLaunchPageSize).chunked(2).forEachIndexed { rowIndex, row ->
-                Row(Modifier.fillMaxWidth()) {
-                    repeat(2) { columnIndex ->
-                        val favorite = row.getOrNull(columnIndex)
-                        if (favorite == null) Spacer(Modifier.weight(1f)) else FavoriteLcdRow(
-                            favorite,
-                            firstItemIndex + rowIndex * 2 + columnIndex == state.selectedFavoriteIndex,
-                            Modifier.weight(1f),
-                        )
-                    }
-                }
-            }
-            state.message?.let { LcdMessage(it) }
-        }
-        QuickLaunchPageIndicator(pageIndex, favorites.pageCount(), Modifier.align(Alignment.CenterEnd))
+private fun SettingsLcdContent(state: LauncherUiState, modifier: Modifier) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        SettingRow("SEARCH KEYBOARD", if (state.settings.searchKeyboardFormat == SearchKeyboardFormat.T9) "T9" else "MULTI-PRESS", state.selectedSettingIndex == 0)
+        SettingRow("TOUCH TO LAUNCH", if (state.settings.touchToLaunchShortcuts) "ON" else "OFF", state.selectedSettingIndex == 1)
+        SettingRow("CHANGE LAUNCHER", "OPEN", state.selectedSettingIndex == 2)
+        state.message?.let { LcdMessage(it) }
+    }
+}
+
+/** Draws one labeled preference with its current value and inverse focused treatment. */
+@Composable
+private fun SettingRow(label: String, value: String, focused: Boolean) {
+    val background = if (focused) FlipColors.ScreenInk else Color.Transparent
+    val foreground = if (focused) FlipColors.ScreenTop else FlipColors.ScreenInk
+    Row(
+        Modifier.fillMaxWidth().height(43.dp).background(background, RoundedCornerShape(2.dp)).padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label, color = foreground, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        Text(value, color = foreground, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, fontFamily = FontFamily.Monospace)
     }
 }
 
@@ -632,19 +690,33 @@ private fun EditorNameInput(draft: FavoriteDraft, controller: LauncherController
 /** Displays every available monochrome icon in a full-screen three-column selection grid. */
 @Composable
 private fun FavoriteIconPickerLcdContent(state: LauncherUiState, modifier: Modifier) {
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        FavoriteIcon.values().toList().chunked(QuickLaunchColumnCount).forEachIndexed { rowIndex, row ->
-            Row(Modifier.fillMaxWidth()) {
-                row.forEachIndexed { columnIndex, icon ->
-                    val selected = rowIndex * QuickLaunchColumnCount + columnIndex == state.selectedFavoriteIconIndex
-                    Box(
-                        modifier = Modifier.weight(1f).height(40.dp).padding(horizontal = 4.dp)
-                            .then(if (selected) Modifier.border(1.dp, FlipColors.ScreenInk, RoundedCornerShape(4.dp)) else Modifier),
-                        contentAlignment = Alignment.Center,
-                    ) { FavoriteIconGraphic(icon, iconSize = 25.dp) }
+    val icons = FavoriteIcon.values().toList()
+    val pageIndex = state.selectedFavoriteIconIndex / FavoriteIconPageSize
+    val firstIconIndex = pageIndex * FavoriteIconPageSize
+    Box(modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(end = 9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            icons.drop(firstIconIndex).take(FavoriteIconPageSize).chunked(QuickLaunchColumnCount).forEachIndexed { rowIndex, row ->
+                Row(Modifier.fillMaxWidth()) {
+                    row.forEachIndexed { columnIndex, icon ->
+                        val iconIndex = firstIconIndex + rowIndex * QuickLaunchColumnCount + columnIndex
+                        IconPickerCell(icon, iconIndex == state.selectedFavoriteIconIndex, Modifier.weight(1f))
+                    }
                 }
             }
         }
+        QuickLaunchPageIndicator(pageIndex, itemPageCount(icons.size, FavoriteIconPageSize), Modifier.align(Alignment.CenterEnd))
+    }
+}
+
+/** Draws one fixed-size cell in the paged monochrome favorite-icon library. */
+@Composable
+private fun IconPickerCell(icon: FavoriteIcon, selected: Boolean, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.height(40.dp).padding(horizontal = 4.dp)
+            .then(if (selected) Modifier.border(1.dp, FlipColors.ScreenInk, RoundedCornerShape(4.dp)) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        FavoriteIconGraphic(icon, iconSize = 25.dp)
     }
 }
 
@@ -747,14 +819,20 @@ private fun DialerLcdContent(state: LauncherUiState, modifier: Modifier) {
  * @param modifier Layout constraints for this grid cell.
  */
 @Composable
-private fun FavoriteLcdTile(favorite: QuickLaunchFavorite, focused: Boolean, modifier: Modifier = Modifier) {
+private fun FavoriteLcdTile(
+    favorite: QuickLaunchFavorite,
+    focused: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit = {},
+    touchEnabled: Boolean = false,
+) {
     val focusModifier = if (focused) {
         Modifier.border(1.dp, FlipColors.ScreenInk, RoundedCornerShape(4.dp))
     } else {
         Modifier
     }
     Column(
-        modifier = modifier
+        modifier = modifier.clickable(enabled = touchEnabled, onClick = onClick)
             .padding(horizontal = 4.dp, vertical = 1.dp)
             .then(focusModifier)
             .padding(vertical = 3.dp),
@@ -804,6 +882,54 @@ private fun FavoriteIconGraphic(icon: FavoriteIcon, modifier: Modifier = Modifie
         FavoriteIcon.Mail -> Icons.Filled.Mail
         FavoriteIcon.Music -> Icons.Filled.MusicNote
         FavoriteIcon.Apps -> Icons.Filled.Apps
+        FavoriteIcon.Calculator -> Icons.Filled.Calculate
+        FavoriteIcon.Weather -> Icons.Filled.Cloud
+        FavoriteIcon.Notes -> Icons.Filled.Note
+        FavoriteIcon.Video -> Icons.Filled.SmartDisplay
+        FavoriteIcon.Store -> Icons.Filled.Storefront
+        FavoriteIcon.Files -> Icons.Filled.Folder
+        FavoriteIcon.Radio -> Icons.Filled.Radio
+        FavoriteIcon.Podcasts -> Icons.Filled.Podcasts
+        FavoriteIcon.Games -> Icons.Filled.SportsEsports
+        FavoriteIcon.Wallet -> Icons.Filled.AccountBalanceWallet
+        FavoriteIcon.Fitness -> Icons.Filled.FitnessCenter
+        FavoriteIcon.News -> Icons.Filled.Newspaper
+        FavoriteIcon.Bird -> Icons.Filled.FlutterDash
+        FavoriteIcon.Home -> Icons.Filled.Home
+        FavoriteIcon.Person -> Icons.Filled.Person
+        FavoriteIcon.Groups -> Icons.Filled.Groups
+        FavoriteIcon.Favorite -> Icons.Filled.Favorite
+        FavoriteIcon.Star -> Icons.Filled.Star
+        FavoriteIcon.Work -> Icons.Filled.Work
+        FavoriteIcon.School -> Icons.Filled.School
+        FavoriteIcon.Book -> Icons.Filled.Book
+        FavoriteIcon.Lightbulb -> Icons.Filled.Lightbulb
+        FavoriteIcon.Shopping -> Icons.Filled.ShoppingCart
+        FavoriteIcon.Restaurant -> Icons.Filled.Restaurant
+        FavoriteIcon.Coffee -> Icons.Filled.Coffee
+        FavoriteIcon.Car -> Icons.Filled.DirectionsCar
+        FavoriteIcon.Bike -> Icons.Filled.DirectionsBike
+        FavoriteIcon.Train -> Icons.Filled.Train
+        FavoriteIcon.Flight -> Icons.Filled.Flight
+        FavoriteIcon.Hotel -> Icons.Filled.Hotel
+        FavoriteIcon.Park -> Icons.Filled.Park
+        FavoriteIcon.Gas -> Icons.Filled.LocalGasStation
+        FavoriteIcon.Hospital -> Icons.Filled.LocalHospital
+        FavoriteIcon.Medication -> Icons.Filled.Medication
+        FavoriteIcon.Emergency -> Icons.Filled.Emergency
+        FavoriteIcon.Wifi -> Icons.Filled.Wifi
+        FavoriteIcon.Bluetooth -> Icons.Filled.Bluetooth
+        FavoriteIcon.Headphones -> Icons.Filled.Headphones
+        FavoriteIcon.Microphone -> Icons.Filled.Mic
+        FavoriteIcon.Notifications -> Icons.Filled.Notifications
+        FavoriteIcon.Security -> Icons.Filled.Security
+        FavoriteIcon.Key -> Icons.Filled.Key
+        FavoriteIcon.Print -> Icons.Filled.Print
+        FavoriteIcon.QrCode -> Icons.Filled.QrCode
+        FavoriteIcon.Translate -> Icons.Filled.Translate
+        FavoriteIcon.Explore -> Icons.Filled.Explore
+        FavoriteIcon.Savings -> Icons.Filled.Savings
+        FavoriteIcon.Cleaning -> Icons.Filled.CleaningServices
     }
     Icon(image, contentDescription = null, modifier = modifier.size(iconSize), tint = FlipColors.ScreenInk)
 }
@@ -879,7 +1005,7 @@ private fun softActions(state: LauncherUiState): List<SoftAction> = when {
         LauncherScreen.Home -> listOf(SoftAction.Search, SoftAction.Quick, SoftAction.Settings)
         LauncherScreen.Search -> listOf(SoftAction.Backspace, SoftAction.ToggleSearchMode, SoftAction.Home)
         LauncherScreen.QuickLaunch -> listOf(SoftAction.Edit, SoftAction.Add, SoftAction.Home)
-        LauncherScreen.Settings -> listOf(SoftAction.Home, SoftAction.Edit, SoftAction.Quick)
+        LauncherScreen.Settings -> listOf(SoftAction.None, SoftAction.None, SoftAction.Home)
         LauncherScreen.FavoriteEditor -> listOf(SoftAction.Save, SoftAction.Delete, SoftAction.Cancel)
         LauncherScreen.Dialer -> listOf(SoftAction.Delete, SoftAction.Text, SoftAction.Call)
     }

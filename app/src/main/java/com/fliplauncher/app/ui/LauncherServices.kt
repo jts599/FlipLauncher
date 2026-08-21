@@ -9,7 +9,9 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStore
@@ -20,8 +22,43 @@ import java.io.IOException
 private const val FavoriteStoreName = "quick_launch_favorites"
 private const val FavoriteFieldSeparator = "\u001F"
 private const val FavoriteSlotPrefix = "favorite_slot_"
+private val SearchKeyboardFormatKey = stringPreferencesKey("search_keyboard_format")
+private val TouchToLaunchKey = booleanPreferencesKey("touch_to_launch_shortcuts")
 
 private val Context.favoriteDataStore by preferencesDataStore(name = FavoriteStoreName)
+
+/** Loads and saves launcher-wide interaction preferences. */
+internal interface LauncherSettingsRepository {
+    /** Returns saved settings, using safe defaults for absent or invalid values. */
+    suspend fun load(): LauncherSettings
+
+    /** Persists the complete settings value atomically. */
+    suspend fun save(settings: LauncherSettings)
+}
+
+/** Stores launcher interaction preferences beside the Quick Launch configuration. */
+internal class DataStoreLauncherSettingsRepository(private val context: Context) : LauncherSettingsRepository {
+    /** Reads preferences while recovering from storage I/O failures. */
+    override suspend fun load(): LauncherSettings {
+        val preferences = context.favoriteDataStore.data
+            .catch { exception -> if (exception is IOException) emit(emptyPreferences()) else throw exception }
+            .first()
+        return LauncherSettings(
+            searchKeyboardFormat = preferences[SearchKeyboardFormatKey]
+                ?.let { saved -> SearchKeyboardFormat.values().firstOrNull { it.name == saved } }
+                ?: SearchKeyboardFormat.T9,
+            touchToLaunchShortcuts = preferences[TouchToLaunchKey] ?: false,
+        )
+    }
+
+    /** Writes both settings as one DataStore transaction. */
+    override suspend fun save(settings: LauncherSettings) {
+        context.favoriteDataStore.edit { preferences ->
+            preferences[SearchKeyboardFormatKey] = settings.searchKeyboardFormat.name
+            preferences[TouchToLaunchKey] = settings.touchToLaunchShortcuts
+        }
+    }
+}
 
 /** Loads and saves the configurable Quick Launch slots. */
 internal interface FavoriteRepository {
@@ -104,6 +141,9 @@ internal interface ExternalNavigator {
 
     /** Opens Android's messaging flow addressed to a valid user-entered phone number. */
     fun openTextMessage(number: String): HandoffResult
+
+    /** Opens Android's system UI for choosing the default Home application. */
+    fun openHomeSettings(): HandoffResult
 }
 
 /** Uses explicit launcher intents and ACTION_DIAL so no call permission is needed. */
@@ -136,6 +176,9 @@ internal class AndroidExternalNavigator(private val context: Context) : External
         Intent(Intent.ACTION_SENDTO, Uri.fromParts("smsto", number, null)),
     )
 
+    /** Opens the device's default Home-app chooser. */
+    override fun openHomeSettings(): HandoffResult = start(Intent(Settings.ACTION_HOME_SETTINGS))
+
     /** Starts an external intent and converts missing targets into local UI feedback. */
     private fun start(intent: Intent): HandoffResult = try {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -167,6 +210,12 @@ internal fun String.toT9Digits(): String = buildString {
 /** Filters a catalog by a partial T9 pattern while retaining alphabetical catalog order. */
 internal fun filterAppsByT9(apps: List<LaunchableApp>, digits: String): List<LaunchableApp> =
     if (digits.isEmpty()) apps else apps.filter { app -> app.label.toT9Digits().contains(digits) }
+
+/** Filters apps using the query representation selected in Settings. */
+internal fun filterApps(apps: List<LaunchableApp>, query: String, format: SearchKeyboardFormat): List<LaunchableApp> = when (format) {
+    SearchKeyboardFormat.T9 -> filterAppsByT9(apps, query)
+    SearchKeyboardFormat.MultiPress -> if (query.isEmpty()) apps else apps.filter { it.label.contains(query, ignoreCase = true) }
+}
 
 /** Creates a stable DataStore key for one zero-based Quick Launch slot. */
 private fun favoriteSlotKey(index: Int) = stringPreferencesKey(FavoriteSlotPrefix + index)

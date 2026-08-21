@@ -28,6 +28,18 @@ internal enum class SearchMode {
     Results,
 }
 
+/** Selects how telephone keypad presses are translated into an app search query. */
+internal enum class SearchKeyboardFormat {
+    T9,
+    MultiPress,
+}
+
+/** Stores the two user-configurable launcher behaviors. */
+internal data class LauncherSettings(
+    val searchKeyboardFormat: SearchKeyboardFormat = SearchKeyboardFormat.T9,
+    val touchToLaunchShortcuts: Boolean = false,
+)
+
 /** Identifies the three editable properties of a Quick Launch favorite. */
 internal enum class FavoriteField {
     Icon,
@@ -80,6 +92,54 @@ internal enum class FavoriteIcon {
     Mail,
     Music,
     Apps,
+    Calculator,
+    Weather,
+    Notes,
+    Video,
+    Store,
+    Files,
+    Radio,
+    Podcasts,
+    Games,
+    Wallet,
+    Fitness,
+    News,
+    Bird,
+    Home,
+    Person,
+    Groups,
+    Favorite,
+    Star,
+    Work,
+    School,
+    Book,
+    Lightbulb,
+    Shopping,
+    Restaurant,
+    Coffee,
+    Car,
+    Bike,
+    Train,
+    Flight,
+    Hotel,
+    Park,
+    Gas,
+    Hospital,
+    Medication,
+    Emergency,
+    Wifi,
+    Bluetooth,
+    Headphones,
+    Microphone,
+    Notifications,
+    Security,
+    Key,
+    Print,
+    QrCode,
+    Translate,
+    Explore,
+    Savings,
+    Cleaning,
 }
 
 /** Describes a Pixel-style mock app available to the Quick Launch editor. */
@@ -126,6 +186,8 @@ internal data class LauncherUiState(
     val searchDigits: String = "",
     val selectedSearchIndex: Int = 0,
     val selectedFavoriteIndex: Int = 0,
+    val selectedSettingIndex: Int = 0,
+    val settings: LauncherSettings = LauncherSettings(),
     val editorField: FavoriteField = FavoriteField.Icon,
     val editorSlotIndex: Int = 0,
     val editorDraft: FavoriteDraft? = null,

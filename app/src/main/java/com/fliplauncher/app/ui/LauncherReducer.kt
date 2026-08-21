@@ -2,7 +2,6 @@
 package com.fliplauncher.app.ui
 
 private const val QuickLaunchColumnCount = 3
-private const val SettingsColumnCount = 2
 
 /** Identifies directional input from the navigation keypad. */
 internal enum class NavigationDirection { Up, Down, Left, Right }
@@ -29,14 +28,15 @@ internal fun reduceNavigation(
     favorites: List<QuickLaunchFavorite>,
 ): LauncherUiState = when (state.screen) {
     LauncherScreen.Search -> reduceSearchNavigation(state, direction)
-    LauncherScreen.QuickLaunch, LauncherScreen.Settings -> state.copy(
+    LauncherScreen.QuickLaunch -> state.copy(
         selectedFavoriteIndex = moveGridIndex(
             index = state.selectedFavoriteIndex,
             direction = direction,
             itemCount = favorites.size,
-            columnCount = favoriteColumnCount(state.screen),
+            columnCount = QuickLaunchColumnCount,
         ),
     )
+    LauncherScreen.Settings -> state.copy(selectedSettingIndex = moveSettingIndex(state.selectedSettingIndex, direction))
     LauncherScreen.FavoriteEditor -> when (state.editorMode) {
         FavoriteEditorMode.IconPicker -> reduceIconPickerNavigation(state, direction)
         FavoriteEditorMode.Overview -> reduceEditorNavigation(state, direction)
@@ -83,11 +83,11 @@ private fun reduceSearchNavigation(state: LauncherUiState, direction: Navigation
     return state.copy(selectedSearchIndex = (state.selectedSearchIndex + offset).coerceAtLeast(0))
 }
 
-/** Returns the column count used by the current favorite-focused LCD screen. */
-private fun favoriteColumnCount(screen: LauncherScreen): Int = when (screen) {
-    LauncherScreen.QuickLaunch -> QuickLaunchColumnCount
-    LauncherScreen.Settings -> SettingsColumnCount
-    else -> SettingsColumnCount
+/** Moves focus through the three vertically arranged setting rows. */
+private fun moveSettingIndex(index: Int, direction: NavigationDirection): Int = when (direction) {
+    NavigationDirection.Up -> (index - 1).coerceAtLeast(0)
+    NavigationDirection.Down -> (index + 1).coerceAtMost(2)
+    NavigationDirection.Left, NavigationDirection.Right -> index
 }
 
 /**

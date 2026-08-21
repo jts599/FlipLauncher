@@ -10,11 +10,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private const val MultiPressTimeoutMillis = 1_000L
+
 /** Owns launcher UI state while keeping rendering composables free of platform effects. */
 @Stable
 internal class LauncherController(
     private val scope: CoroutineScope,
     private val favoritesRepository: FavoriteRepository,
+    private val settingsRepository: LauncherSettingsRepository,
     private val appCatalog: LaunchableAppCatalog,
     private val navigator: ExternalNavigator,
 ) {
@@ -31,6 +34,8 @@ internal class LauncherController(
     private var favoritesBeforeMove = emptyList<QuickLaunchFavorite>()
     private var slotBeforeMove = 0
     private var moveOpenedFromQuickLaunch = false
+    private var lastMultiPressKey: String? = null
+    private var lastMultiPressAtMillis = 0L
 
     /** Returns the unsaved favorite ordering shown while the editor is in Move mode. */
     fun editorPreviewFavorites(): List<QuickLaunchFavorite> = editorFavorites
@@ -39,6 +44,7 @@ internal class LauncherController(
     fun load() {
         scope.launch {
             favorites = favoritesRepository.load()
+            state = state.copy(settings = settingsRepository.load())
             apps = withContext(Dispatchers.Default) { appCatalog.load() }
         }
     }
@@ -46,7 +52,9 @@ internal class LauncherController(
     /** Handles a visible physical keypad label according to the current keypad mode. */
     fun pressKey(key: String) {
         if (state.keypadMode() == KeypadMode.Telephone) {
-            state = reduceTelephoneKey(state, key)
+            state = if (state.screen == LauncherScreen.Search && state.settings.searchKeyboardFormat == SearchKeyboardFormat.MultiPress) {
+                enterMultiPressCharacter(key)
+            } else reduceTelephoneKey(state, key)
             return
         }
         if (state.screen == LauncherScreen.FavoriteEditor && state.editorMode in setOf(FavoriteEditorMode.NameEditing, FavoriteEditorMode.AppPicker)) return
@@ -72,7 +80,10 @@ internal class LauncherController(
         SoftAction.Search -> state = state.copy(screen = LauncherScreen.Search, searchMode = SearchMode.Entry, message = null)
         SoftAction.Quick -> state = state.copy(screen = LauncherScreen.QuickLaunch, message = null)
         SoftAction.Settings -> state = state.copy(screen = LauncherScreen.Settings, message = null)
-        SoftAction.Backspace -> state = reduceBackspace(state).copy(message = null)
+        SoftAction.Backspace -> {
+            lastMultiPressKey = null
+            state = reduceBackspace(state).copy(message = null)
+        }
         SoftAction.ToggleSearchMode -> state = state.copy(searchMode = state.searchMode.toggle(), selectedSearchIndex = 0)
         SoftAction.Home -> goHome()
         SoftAction.Edit -> openSelectedFavoriteEditor()
@@ -102,20 +113,59 @@ internal class LauncherController(
     }
 
     /** Returns to the stable Home view and discards transient view-specific input. */
-    fun goHome() { state = homeState() }
+    fun goHome() { state = homeState().copy(settings = state.settings) }
 
     /** Returns the apps currently matching the user's T9 digit sequence. */
-    fun filteredApps(): List<LaunchableApp> = filterAppsByT9(apps, state.searchDigits)
+    fun filteredApps(): List<LaunchableApp> = filterApps(apps, state.searchDigits, state.settings.searchKeyboardFormat)
+
+    /** Launches a tapped shortcut only when the corresponding accessibility setting is enabled. */
+    fun tapFavorite(index: Int) {
+        if (!state.settings.touchToLaunchShortcuts) return
+        state = state.copy(selectedFavoriteIndex = index)
+        launchFavorite()
+    }
 
     /** Launches the active search item or favorite, or opens the active settings slot. */
     private fun selectFocusedItem() {
         when (state.screen) {
             LauncherScreen.Search -> filteredApps().getOrNull(state.selectedSearchIndex)?.let { launchApp(it) }
             LauncherScreen.QuickLaunch -> launchFavorite()
-            LauncherScreen.Settings -> openSelectedFavoriteEditor()
+            LauncherScreen.Settings -> toggleSelectedSetting()
             LauncherScreen.FavoriteEditor -> selectEditorModeItem()
             else -> Unit
         }
+    }
+
+    /** Toggles the focused setting and persists the resulting complete configuration. */
+    private fun toggleSelectedSetting() {
+        if (state.selectedSettingIndex == 2) {
+            openHomeSettings()
+            return
+        }
+        val current = state.settings
+        val updated = if (state.selectedSettingIndex == 0) {
+            current.copy(searchKeyboardFormat = if (current.searchKeyboardFormat == SearchKeyboardFormat.T9) SearchKeyboardFormat.MultiPress else SearchKeyboardFormat.T9)
+        } else current.copy(touchToLaunchShortcuts = !current.touchToLaunchShortcuts)
+        state = state.copy(settings = updated, searchDigits = "", selectedSearchIndex = 0)
+        scope.launch { settingsRepository.save(updated) }
+    }
+
+    /** Opens Android's launcher selector while retaining the current Settings screen. */
+    private fun openHomeSettings() {
+        if (navigator.openHomeSettings() == HandoffResult.Unavailable) {
+            state = state.copy(message = "Settings unavailable")
+        }
+    }
+
+    /** Converts one telephone key into a conventional cycling multi-press letter. */
+    private fun enterMultiPressCharacter(key: String): LauncherUiState {
+        val letters = key.multiPressLetters() ?: return state
+        val now = System.currentTimeMillis()
+        val shouldCycle = key == lastMultiPressKey && now - lastMultiPressAtMillis <= MultiPressTimeoutMillis && state.searchDigits.isNotEmpty()
+        val query = if (shouldCycle) state.searchDigits.dropLast(1) + letters.nextAfter(state.searchDigits.last()) else state.searchDigits + letters.first()
+        lastMultiPressKey = key
+        lastMultiPressAtMillis = now
+        return state.copy(searchDigits = query, selectedSearchIndex = 0, message = null)
     }
 
     /** Opens one shared editor session from either Quick Launch or Settings. */
@@ -155,7 +205,7 @@ internal class LauncherController(
     /** Deletes one dialed character and returns Home after deleting the final character. */
     private fun deleteDialedCharacter() {
         val reduced = reduceBackspace(state)
-        state = if (reduced.dialedNumber.isEmpty()) homeState() else reduced
+        state = if (reduced.dialedNumber.isEmpty()) homeState().copy(settings = state.settings) else reduced
     }
 
     /** Clears the Dialer state before handing a number to an Android activity. */
@@ -166,13 +216,13 @@ internal class LauncherController(
     ) {
         val number = state.dialedNumber
         if (number.isEmpty()) { state = state.copy(message = emptyMessage); return }
-        state = homeState()
+        state = homeState().copy(settings = state.settings)
         if (handoff(number) == HandoffResult.Unavailable) state = state.copy(message = unavailableMessage)
     }
 
     /** Translates Android handoff success and failure into the requested launcher behavior. */
     private fun finishHandoff(result: HandoffResult, message: String) {
-        state = if (result == HandoffResult.Started) homeState() else state.copy(message = message)
+        state = if (result == HandoffResult.Started) homeState().copy(settings = state.settings) else state.copy(message = message)
     }
 
     /** Opens a draft session for a new favorite appended after the current configured slots. */
@@ -344,6 +394,18 @@ private fun String.directionOrNull(): NavigationDirection? = when (this) {
 
 /** Switches Search between T9 entry and focused result navigation. */
 private fun SearchMode.toggle(): SearchMode = if (this == SearchMode.Entry) SearchMode.Results else SearchMode.Entry
+
+/** Returns the alphabet assigned to a telephone digit for multi-press entry. */
+private fun String.multiPressLetters(): String? = mapOf(
+    "2" to "ABC", "3" to "DEF", "4" to "GHI", "5" to "JKL",
+    "6" to "MNO", "7" to "PQRS", "8" to "TUV", "9" to "WXYZ",
+)[this]
+
+/** Returns the letter following the current one, wrapping inside a digit's alphabet. */
+private fun String.nextAfter(current: Char): Char {
+    val index = indexOf(current.uppercaseChar())
+    return this[(index + 1).mod(length)]
+}
 
 /** Prevents focus from pointing beyond the filtered Search result list. */
 private fun LauncherUiState.clampSearchIndex(apps: List<LaunchableApp>): LauncherUiState =
