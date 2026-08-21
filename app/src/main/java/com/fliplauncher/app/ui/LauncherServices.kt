@@ -25,7 +25,7 @@ private val Context.favoriteDataStore by preferencesDataStore(name = FavoriteSto
 
 /** Loads and saves the configurable Quick Launch slots. */
 internal interface FavoriteRepository {
-    /** Returns six validated saved favorites, or the supplied defaults when no data exists. */
+    /** Returns validated saved favorites, appending defaults for newly introduced slots. */
     suspend fun load(): List<QuickLaunchFavorite>
 
     /** Persists every favorite slot atomically. */
@@ -41,15 +41,14 @@ internal class DataStoreFavoriteRepository(private val context: Context) : Favor
                 if (exception is IOException) emit(emptyPreferences()) else throw exception
             }
             .first()
-        val saved = FavoriteTargets.all.indices.mapNotNull { index ->
-            preferences[favoriteSlotKey(index)]?.toFavoriteOrNull()
+        return FavoriteTargets.defaults().mapIndexed { index, default ->
+            preferences[favoriteSlotKey(index)]?.toFavoriteOrNull() ?: default
         }
-        return if (saved.size == FavoriteTargets.all.size) saved else FavoriteTargets.defaults()
     }
 
-    /** Replaces the persisted slots after validating the required fixed-size configuration. */
+    /** Replaces the persisted slots after validating the configured slot count. */
     override suspend fun save(favorites: List<QuickLaunchFavorite>) {
-        require(favorites.size == FavoriteTargets.all.size) { "Quick Launch requires six favorites." }
+        require(favorites.size == FavoriteTargets.all.size) { "Quick Launch requires every configured favorite." }
         context.favoriteDataStore.edit { preferences ->
             favorites.forEachIndexed { index, favorite -> preferences[favoriteSlotKey(index)] = favorite.serialize() }
         }

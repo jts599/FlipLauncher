@@ -1,8 +1,8 @@
 /** Provides pure state transitions for FlipLauncher's keypad-driven navigation. */
 package com.fliplauncher.app.ui
 
-private const val FavoriteColumnCount = 2
-private const val FavoriteSlotCount = 6
+private const val QuickLaunchColumnCount = 3
+private const val SettingsColumnCount = 2
 
 /** Identifies directional input from the navigation keypad. */
 internal enum class NavigationDirection { Up, Down, Left, Right }
@@ -30,7 +30,12 @@ internal fun reduceNavigation(
 ): LauncherUiState = when (state.screen) {
     LauncherScreen.Search -> reduceSearchNavigation(state, direction)
     LauncherScreen.QuickLaunch, LauncherScreen.Settings -> state.copy(
-        selectedFavoriteIndex = moveGridIndex(state.selectedFavoriteIndex, direction, favorites.size),
+        selectedFavoriteIndex = moveGridIndex(
+            index = state.selectedFavoriteIndex,
+            direction = direction,
+            itemCount = favorites.size,
+            columnCount = favoriteColumnCount(state.screen),
+        ),
     )
     LauncherScreen.FavoriteEditor -> reduceEditorNavigation(state, direction)
     else -> state
@@ -72,16 +77,31 @@ private fun reduceSearchNavigation(state: LauncherUiState, direction: Navigation
     return state.copy(selectedSearchIndex = (state.selectedSearchIndex + offset).coerceAtLeast(0))
 }
 
-/** Moves an index inside a fixed two-column grid without wrapping at its edges. */
-private fun moveGridIndex(index: Int, direction: NavigationDirection, itemCount: Int): Int {
+/** Returns the column count used by the current favorite-focused LCD screen. */
+private fun favoriteColumnCount(screen: LauncherScreen): Int = when (screen) {
+    LauncherScreen.QuickLaunch -> QuickLaunchColumnCount
+    LauncherScreen.Settings -> SettingsColumnCount
+    else -> SettingsColumnCount
+}
+
+/**
+ * Moves an index through a fixed-width grid without wrapping at its edges.
+ *
+ * @param index Currently focused zero-based item index.
+ * @param direction Keypad direction to apply.
+ * @param itemCount Number of available items; zero produces index zero.
+ * @param columnCount Number of visual columns in the active grid.
+ * @return A valid focused index, clamped to the first or final item when an edge is reached.
+ */
+private fun moveGridIndex(index: Int, direction: NavigationDirection, itemCount: Int, columnCount: Int): Int {
     if (itemCount == 0) return 0
     val candidate = when (direction) {
-        NavigationDirection.Up -> index - FavoriteColumnCount
-        NavigationDirection.Down -> index + FavoriteColumnCount
-        NavigationDirection.Left -> if (index % FavoriteColumnCount == 0) index else index - 1
-        NavigationDirection.Right -> if (index % FavoriteColumnCount == FavoriteColumnCount - 1) index else index + 1
+        NavigationDirection.Up -> index - columnCount
+        NavigationDirection.Down -> index + columnCount
+        NavigationDirection.Left -> if (index % columnCount == 0) index else index - 1
+        NavigationDirection.Right -> if (index % columnCount == columnCount - 1) index else index + 1
     }
-    return candidate.coerceIn(0, minOf(itemCount, FavoriteSlotCount) - 1)
+    return candidate.coerceIn(0, itemCount - 1)
 }
 
 /** Moves between editor fields or cycles the current draft value. */

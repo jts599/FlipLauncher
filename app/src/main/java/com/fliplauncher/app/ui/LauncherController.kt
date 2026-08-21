@@ -80,12 +80,12 @@ internal class LauncherController(
         }
     }
 
-    /** Returns Home, launches the selected favorite, or opens its settings grid. */
+    /** Opens the favorites editor from the left action bar or returns Home from the right one. */
     private fun handleQuickAction(index: Int) {
         when (index) {
-            0 -> goHome()
-            1 -> launchFavorite()
-            else -> state = state.copy(screen = LauncherScreen.Settings, message = null)
+            0 -> state = state.copy(screen = LauncherScreen.Settings, message = null)
+            2 -> goHome()
+            else -> Unit
         }
     }
 

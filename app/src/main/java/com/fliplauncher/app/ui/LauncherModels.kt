@@ -43,6 +43,11 @@ internal enum class FavoriteIcon {
     Browser,
     Map,
     Photos,
+    Calendar,
+    Clock,
+    Contacts,
+    Mail,
+    Music,
 }
 
 /** Describes a Pixel-style mock app available to the Quick Launch editor. */
@@ -54,7 +59,7 @@ internal data class FavoriteTarget(
     val defaultIcon: FavoriteIcon,
 )
 
-/** Represents one persisted slot in the six-item Quick Launch grid. */
+/** Represents one persisted Quick Launch slot; the launcher pages arbitrary slot counts. */
 internal data class QuickLaunchFavorite(
     val targetId: String,
     val label: String,
@@ -105,12 +110,17 @@ internal object FavoriteTargets {
         FavoriteTarget("chrome", "Chrome", "com.android.chrome", listOf("Chrome", "Web"), FavoriteIcon.Browser),
         FavoriteTarget("maps", "Maps", "com.google.android.apps.maps", listOf("Maps", "Navigate"), FavoriteIcon.Map),
         FavoriteTarget("photos", "Photos", "com.google.android.apps.photos", listOf("Photos", "Gallery"), FavoriteIcon.Photos),
+        FavoriteTarget("calendar", "Calendar", "com.google.android.calendar", listOf("Calendar", "Agenda"), FavoriteIcon.Calendar),
+        FavoriteTarget("clock", "Clock", "com.google.android.deskclock", listOf("Clock", "Alarms"), FavoriteIcon.Clock),
+        FavoriteTarget("contacts", "Contacts", "com.google.android.contacts", listOf("Contacts", "People"), FavoriteIcon.Contacts),
+        FavoriteTarget("gmail", "Gmail", "com.google.android.gm", listOf("Gmail", "Mail"), FavoriteIcon.Mail),
+        FavoriteTarget("music", "Music", "com.youtube.music", listOf("Music", "Listen"), FavoriteIcon.Music),
     )
 
     /** Returns a target by identifier, or Phone when persisted data is invalid. */
     fun find(id: String): FavoriteTarget = all.firstOrNull { it.id == id } ?: all.first()
 
-    /** Returns the six initial favorites, one for each mock target. */
+    /** Returns one initial favorite for every supplied mock target. */
     fun defaults(): List<QuickLaunchFavorite> = all.map { target ->
         QuickLaunchFavorite(target.id, target.labels.first(), target.defaultIcon)
     }

@@ -8,6 +8,7 @@ import android.os.BatteryManager
 import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,15 +19,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
@@ -35,10 +40,13 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Launch
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Message
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Textsms
@@ -72,6 +80,8 @@ import java.util.Date
 
 private const val MillisPerMinute = 60_000L
 private const val UnknownBatteryLevel = -1
+private const val QuickLaunchColumnCount = 3
+private const val QuickLaunchPageSize = 6
 private val CellSignalBarHeights = listOf(6.dp, 10.dp, 14.dp, 18.dp)
 private val KeyLabels = listOf(
     KeyLabel("1"), KeyLabel("2", "ABC"), KeyLabel("3", "DEF"),
@@ -288,7 +298,7 @@ private fun LauncherLcdContent(status: LauncherStatus, controller: LauncherContr
     when (state.screen) {
         LauncherScreen.Home -> HomeLcdContent(status, state.message, modifier)
         LauncherScreen.Search -> SearchLcdContent(state, controller.filteredApps(), modifier)
-        LauncherScreen.QuickLaunch -> FavoritesLcdContent("QUICK LAUNCH", state, controller.favorites, modifier)
+        LauncherScreen.QuickLaunch -> QuickLaunchLcdContent(state, controller.favorites, modifier)
         LauncherScreen.Settings -> FavoritesLcdContent("SETTINGS", state, controller.favorites, modifier)
         LauncherScreen.FavoriteEditor -> FavoriteEditorLcdContent(state, modifier)
         LauncherScreen.Dialer -> DialerLcdContent(state, modifier)
@@ -318,14 +328,86 @@ private fun SearchLcdContent(state: LauncherUiState, apps: List<LaunchableApp>, 
     }
 }
 
-/** Renders the focused six-slot grid used for Quick Launch and Settings. */
+/**
+ * Renders the Quick Launch grid as large, centered app icons with compact labels.
+ *
+ * @param state Current launcher state; its selected favorite index receives the focus treatment.
+ * @param favorites Configured Quick Launch entries, displayed in a two-column grid.
+ * @param modifier Layout constraints supplied by the LCD container.
+ */
+@Composable
+private fun QuickLaunchLcdContent(
+    state: LauncherUiState,
+    favorites: List<QuickLaunchFavorite>,
+    modifier: Modifier,
+) {
+    val pageIndex = state.selectedFavoriteIndex / QuickLaunchPageSize
+    val pageCount = favorites.pageCount()
+    val firstItemIndex = pageIndex * QuickLaunchPageSize
+    Box(modifier = modifier.fillMaxWidth()) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            favorites.drop(firstItemIndex).take(QuickLaunchPageSize).chunked(QuickLaunchColumnCount).forEachIndexed { rowIndex, row ->
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    repeat(QuickLaunchColumnCount) { columnIndex ->
+                        val favorite = row.getOrNull(columnIndex)
+                        if (favorite == null) {
+                            Spacer(Modifier.weight(1f))
+                        } else {
+                            FavoriteLcdTile(
+                                favorite = favorite,
+                                focused = firstItemIndex + rowIndex * QuickLaunchColumnCount + columnIndex == state.selectedFavoriteIndex,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+            }
+            state.message?.let { LcdMessage(it) }
+        }
+        QuickLaunchPageIndicator(
+            pageIndex = pageIndex,
+            pageCount = pageCount,
+            modifier = Modifier.align(Alignment.CenterEnd),
+        )
+    }
+}
+
+/** Returns the number of six-slot LCD pages needed for this favorite collection. */
+private fun List<QuickLaunchFavorite>.pageCount(): Int = (size + QuickLaunchPageSize - 1) / QuickLaunchPageSize
+
+/**
+ * Draws a compact page indicator only when the favorite grid overflows one LCD page.
+ *
+ * @param pageIndex Zero-based page containing the selected favorite.
+ * @param pageCount Number of available pages; one or fewer hides the indicator.
+ * @param modifier Positions the dot rail alongside the app grid.
+ */
+@Composable
+private fun QuickLaunchPageIndicator(pageIndex: Int, pageCount: Int, modifier: Modifier = Modifier) {
+    if (pageCount <= 1) return
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        repeat(pageCount) { index ->
+            Box(
+                modifier = Modifier
+                    .size(5.dp)
+                    .clip(CircleShape)
+                    .background(FlipColors.ScreenInk.copy(alpha = if (index == pageIndex) 1f else 0.35f)),
+            )
+        }
+    }
+}
+
+/** Renders the compact six-slot list used by the Settings page. */
 @Composable
 private fun FavoritesLcdContent(title: String, state: LauncherUiState, favorites: List<QuickLaunchFavorite>, modifier: Modifier) {
     Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         LcdTitle(title)
         favorites.chunked(2).forEachIndexed { rowIndex, row ->
             Row(Modifier.fillMaxWidth()) { row.forEachIndexed { columnIndex, favorite ->
-                LcdRow("${favorite.icon.glyph} ${favorite.label}", rowIndex * 2 + columnIndex == state.selectedFavoriteIndex, Modifier.weight(1f))
+                FavoriteLcdRow(favorite, rowIndex * 2 + columnIndex == state.selectedFavoriteIndex, Modifier.weight(1f))
             } }
         }
         state.message?.let { LcdMessage(it) }
@@ -340,7 +422,7 @@ private fun FavoriteEditorLcdContent(state: LauncherUiState, modifier: Modifier)
         LcdTitle("EDIT FAVORITE")
         LcdRow("APP ${FavoriteTargets.find(draft.targetId).appName}", state.editorField == FavoriteField.App)
         LcdRow("NAME ${draft.label}", state.editorField == FavoriteField.Label)
-        LcdRow("ICON ${draft.icon.glyph}", state.editorField == FavoriteField.Icon)
+        LcdRow("ICON ${draft.icon.name.uppercase()}", state.editorField == FavoriteField.Icon)
     }
 }
 
@@ -361,6 +443,73 @@ private fun DialerLcdContent(state: LauncherUiState, modifier: Modifier) {
 /** Renders concise feedback inside the LCD. */
 @Composable private fun LcdMessage(text: String) = Text(text, color = FlipColors.ScreenInk.copy(alpha = 0.7f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
 
+/**
+ * Renders one Quick Launch entry with its app icon as the visual priority.
+ *
+ * @param favorite Favorite configuration supplying the icon and label.
+ * @param focused Whether this tile is selected by the keypad cursor.
+ * @param modifier Layout constraints for this grid cell.
+ */
+@Composable
+private fun FavoriteLcdTile(favorite: QuickLaunchFavorite, focused: Boolean, modifier: Modifier = Modifier) {
+    val focusModifier = if (focused) {
+        Modifier.border(1.dp, FlipColors.ScreenInk, RoundedCornerShape(4.dp))
+    } else {
+        Modifier
+    }
+    Column(
+        modifier = modifier
+            .padding(horizontal = 4.dp, vertical = 1.dp)
+            .then(focusModifier)
+            .padding(vertical = 3.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        FavoriteIconGraphic(favorite.icon, Modifier.size(29.dp))
+        Text(
+            text = favorite.label,
+            color = FlipColors.ScreenInk,
+            fontSize = 9.sp,
+            fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/** Renders a compact favorite row for Settings using the shared monochrome icon system. */
+@Composable
+private fun FavoriteLcdRow(favorite: QuickLaunchFavorite, focused: Boolean, modifier: Modifier = Modifier) {
+    Row(modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(if (focused) "›" else " ", color = FlipColors.ScreenInk, fontWeight = FontWeight.Bold)
+        FavoriteIconGraphic(favorite.icon, Modifier.padding(horizontal = 2.dp))
+        Text(favorite.label, color = FlipColors.ScreenInk, fontSize = 11.sp, fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium, maxLines = 1)
+    }
+}
+
+/**
+ * Renders the filled monochrome glyph assigned to a favorite.
+ *
+ * @param icon Configured semantic app icon.
+ * @param modifier Controls the glyph's displayed size and placement.
+ */
+@Composable
+private fun FavoriteIconGraphic(icon: FavoriteIcon, modifier: Modifier = Modifier) {
+    val image = when (icon) {
+        FavoriteIcon.Phone -> Icons.Filled.Call
+        FavoriteIcon.Message -> Icons.Filled.Message
+        FavoriteIcon.Camera -> Icons.Filled.PhotoCamera
+        FavoriteIcon.Browser -> Icons.Filled.Language
+        FavoriteIcon.Map -> Icons.Filled.Map
+        FavoriteIcon.Photos -> Icons.Filled.Photo
+        FavoriteIcon.Calendar -> Icons.Filled.CalendarToday
+        FavoriteIcon.Clock -> Icons.Filled.Schedule
+        FavoriteIcon.Contacts -> Icons.Filled.Contacts
+        FavoriteIcon.Mail -> Icons.Filled.Mail
+        FavoriteIcon.Music -> Icons.Filled.MusicNote
+    }
+    Icon(image, contentDescription = null, modifier = modifier.height(15.dp), tint = FlipColors.ScreenInk)
+}
+
 /** Renders decorative search, apps, and settings glyphs at the display's bottom edge. */
 @Composable
 private fun ScreenActions(labels: List<String>, modifier: Modifier = Modifier) {
@@ -379,10 +528,32 @@ private fun ScreenActions(labels: List<String>, modifier: Modifier = Modifier) {
                     .semantics { contentDescription = "$label soft-key label" },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(text = label, color = FlipColors.ScreenInk, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                SoftKeyIcon(label)
             }
         }
     }
+}
+
+/** Maps contextual actions onto the launcher-wide bold monochrome icon vocabulary. */
+@Composable
+private fun SoftKeyIcon(label: String) {
+    if (label.isBlank()) return
+    val image = when (label) {
+        "SEARCH" -> Icons.Filled.Search
+        "QUICK" -> Icons.Filled.Apps
+        "SETTINGS" -> Icons.Filled.Settings
+        "DELETE" -> Icons.Filled.Delete
+        "TEXT" -> Icons.Filled.Textsms
+        "CALL", "OPEN" -> Icons.Filled.Call
+        "CLEAR", "CANCEL" -> Icons.Filled.Close
+        "EDIT" -> Icons.Filled.Edit
+        "SAVE" -> Icons.Filled.Save
+        "HOME" -> Icons.Filled.Home
+        "RESULTS" -> Icons.Filled.List
+        "TYPE" -> Icons.Filled.Keyboard
+        else -> Icons.Filled.Launch
+    }
+    Icon(image, contentDescription = label, modifier = Modifier.height(24.dp), tint = FlipColors.ScreenInk)
 }
 
 /** Draws the top boundary for the screen action strip without enclosing its outer edges. */
@@ -402,7 +573,7 @@ private fun Modifier.insideDivider(index: Int, color: Color): Modifier {
 private fun softKeyLabels(state: LauncherUiState): List<String> = when (state.screen) {
     LauncherScreen.Home -> listOf("SEARCH", "QUICK", "SETTINGS")
     LauncherScreen.Search -> listOf("CLEAR", if (state.searchMode == SearchMode.Entry) "RESULTS" else "TYPE", "HOME")
-    LauncherScreen.QuickLaunch -> listOf("HOME", "OPEN", "EDIT")
+    LauncherScreen.QuickLaunch -> listOf("EDIT", "", "HOME")
     LauncherScreen.Settings -> listOf("HOME", "EDIT", "QUICK")
     LauncherScreen.FavoriteEditor -> listOf("CANCEL", "SAVE", "")
     LauncherScreen.Dialer -> listOf("DELETE", "TEXT", "CALL")
