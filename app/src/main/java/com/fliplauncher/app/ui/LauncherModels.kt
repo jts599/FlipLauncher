@@ -36,13 +36,13 @@ internal enum class FavoriteField {
 }
 
 /** Supplies the monochrome glyph chosen for a Quick Launch favorite. */
-internal enum class FavoriteIcon(val glyph: String) {
-    Phone("☎"),
-    Message("✉"),
-    Camera("◉"),
-    Browser("◎"),
-    Map("⌖"),
-    Photos("▣"),
+internal enum class FavoriteIcon {
+    Phone,
+    Message,
+    Camera,
+    Browser,
+    Map,
+    Photos,
 }
 
 /** Describes a Pixel-style mock app available to the Quick Launch editor. */

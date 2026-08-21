@@ -74,6 +74,7 @@ private fun reduceSearchNavigation(state: LauncherUiState, direction: Navigation
 
 /** Moves an index inside a fixed two-column grid without wrapping at its edges. */
 private fun moveGridIndex(index: Int, direction: NavigationDirection, itemCount: Int): Int {
+    if (itemCount == 0) return 0
     val candidate = when (direction) {
         NavigationDirection.Up -> index - FavoriteColumnCount
         NavigationDirection.Down -> index + FavoriteColumnCount

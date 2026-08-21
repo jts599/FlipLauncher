@@ -100,6 +100,9 @@ internal interface ExternalNavigator {
 
     /** Opens Android's dialer populated with a valid user-entered phone number. */
     fun openDialer(number: String): HandoffResult
+
+    /** Opens Android's messaging flow addressed to a valid user-entered phone number. */
+    fun openTextMessage(number: String): HandoffResult
 }
 
 /** Uses explicit launcher intents and ACTION_DIAL so no call permission is needed. */
@@ -120,6 +123,11 @@ internal class AndroidExternalNavigator(private val context: Context) : External
     /** Hands a number to any installed dialer without requesting CALL_PHONE permission. */
     override fun openDialer(number: String): HandoffResult = start(
         Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null)),
+    )
+
+    /** Hands a number to the default SMS-capable application without requesting SMS permission. */
+    override fun openTextMessage(number: String): HandoffResult = start(
+        Intent(Intent.ACTION_SENDTO, Uri.fromParts("smsto", number, null)),
     )
 
     /** Starts an external intent and converts missing targets into local UI feedback. */
@@ -165,6 +173,6 @@ private fun String.toFavoriteOrNull(): QuickLaunchFavorite? {
     val parts = split(FavoriteFieldSeparator)
     val target = parts.getOrNull(0)?.let(FavoriteTargets::find) ?: return null
     val label = parts.getOrNull(1)?.takeIf { it in target.labels } ?: return null
-    val icon = parts.getOrNull(2)?.let { name -> FavoriteIcon.entries.firstOrNull { it.name == name } } ?: return null
+    val icon = parts.getOrNull(2)?.let { name -> FavoriteIcon.values().firstOrNull { it.name == name } } ?: return null
     return QuickLaunchFavorite(target.id, label, icon)
 }

@@ -6,7 +6,9 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.text.format.DateFormat
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,12 +22,33 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Launch
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Message
+import androidx.compose.material.icons.filled.Photo
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Textsms
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +79,12 @@ private val KeyLabels = listOf(
     KeyLabel("7", "PQRS"), KeyLabel("8", "TUV"), KeyLabel("9", "WXYZ"),
     KeyLabel("*"), KeyLabel("0", "+"), KeyLabel("#"),
 )
+private val NavigationKeyLabels = listOf(
+    KeyLabel(""), KeyLabel("↑"), KeyLabel(""),
+    KeyLabel("←"), KeyLabel("OK"), KeyLabel("→"),
+    KeyLabel(""), KeyLabel("↓"), KeyLabel(""),
+    KeyLabel(""), KeyLabel(""), KeyLabel(""),
+)
 
 /** Represents one visual key on the currently non-interactive numeric keypad. */
 private data class KeyLabel(val primary: String, val secondary: String? = null)
@@ -63,16 +92,22 @@ private data class KeyLabel(val primary: String, val secondary: String? = null)
 /** Renders the static FlipLauncher home interface shown in the supplied HTML mockup. */
 @Composable
 fun FlipLauncherApp() {
+    val context = LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
+    val controller = remember(context, scope) {
+        LauncherController(scope, DataStoreFavoriteRepository(context), AndroidLaunchableAppCatalog(context), AndroidExternalNavigator(context))
+    }
     val status = rememberLauncherStatus()
-
+    LaunchedEffect(controller) { controller.load() }
+    BackHandler { controller.goHome() }
     FlipLauncherTheme {
-        FlipPhoneFrame(status = status, modifier = Modifier.fillMaxSize())
+        FlipPhoneFrame(status = status, controller = controller, modifier = Modifier.fillMaxSize())
     }
 }
 
 /** Draws the full-screen handset enclosure and arranges its screen, quick bars, and keypad. */
 @Composable
-private fun FlipPhoneFrame(status: LauncherStatus, modifier: Modifier = Modifier) {
+private fun FlipPhoneFrame(status: LauncherStatus, controller: LauncherController, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier,
         color = Color.Transparent,
@@ -86,11 +121,11 @@ private fun FlipPhoneFrame(status: LauncherStatus, modifier: Modifier = Modifier
         ) {
             SpeakerSlot()
             Spacer(Modifier.height(12.dp))
-            DisplayPanel(status = status, modifier = Modifier.weight(0.74f))
+            DisplayPanel(status = status, controller = controller, modifier = Modifier.weight(0.74f))
             Spacer(Modifier.height(14.dp))
-            QuickActionBars()
+            QuickActionBars(controller)
             Spacer(Modifier.height(14.dp))
-            Keypad(modifier = Modifier.weight(1.12f))
+            Keypad(controller, modifier = Modifier.weight(1.12f))
         }
     }
 }
@@ -114,7 +149,7 @@ private fun SpeakerSlot() {
 
 /** Draws the framed monochrome status screen. Screen symbols are intentionally decorative. */
 @Composable
-private fun DisplayPanel(status: LauncherStatus, modifier: Modifier = Modifier) {
+private fun DisplayPanel(status: LauncherStatus, controller: LauncherController, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -135,14 +170,14 @@ private fun DisplayPanel(status: LauncherStatus, modifier: Modifier = Modifier) 
                 )
                 .padding(7.dp),
         ) {
-            ScreenSurface(status = status)
+            ScreenSurface(status = status, controller = controller)
         }
     }
 }
 
 /** Draws the LCD texture, status values, and inactive screen-action glyphs. */
 @Composable
-private fun ScreenSurface(status: LauncherStatus) {
+private fun ScreenSurface(status: LauncherStatus, controller: LauncherController) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -160,27 +195,8 @@ private fun ScreenSurface(status: LauncherStatus) {
                 .align(Alignment.TopEnd)
                 .padding(end = 16.dp, top = 14.dp),
         )
-        Column(
-            modifier = Modifier.align(Alignment.Center),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                text = status.timeText,
-                color = FlipColors.ScreenInk,
-                fontSize = 48.sp,
-                lineHeight = 44.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-4).sp,
-            )
-            Text(
-                text = status.dateText,
-                color = FlipColors.ScreenInk.copy(alpha = 0.62f),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.8.sp,
-            )
-        }
-        ScreenActions(modifier = Modifier.align(Alignment.BottomCenter))
+        LauncherLcdContent(status, controller, Modifier.align(Alignment.Center).padding(horizontal = 14.dp, vertical = 38.dp))
+        ScreenActions(softKeyLabels(controller.state), modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
 
@@ -265,25 +281,105 @@ private fun CellSignalBars() {
     }
 }
 
+/** Renders each state inside the existing LCD's central content area without adding touch targets. */
+@Composable
+private fun LauncherLcdContent(status: LauncherStatus, controller: LauncherController, modifier: Modifier) {
+    val state = controller.state
+    when (state.screen) {
+        LauncherScreen.Home -> HomeLcdContent(status, state.message, modifier)
+        LauncherScreen.Search -> SearchLcdContent(state, controller.filteredApps(), modifier)
+        LauncherScreen.QuickLaunch -> FavoritesLcdContent("QUICK LAUNCH", state, controller.favorites, modifier)
+        LauncherScreen.Settings -> FavoritesLcdContent("SETTINGS", state, controller.favorites, modifier)
+        LauncherScreen.FavoriteEditor -> FavoriteEditorLcdContent(state, modifier)
+        LauncherScreen.Dialer -> DialerLcdContent(state, modifier)
+    }
+}
+
+/** Preserves the original centered clock/date composition on Home. */
+@Composable
+private fun HomeLcdContent(status: LauncherStatus, message: String?, modifier: Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        message?.let { LcdMessage(it) }
+        Text(status.timeText, color = FlipColors.ScreenInk, fontSize = 48.sp, lineHeight = 44.sp, fontWeight = FontWeight.Bold, letterSpacing = (-4).sp)
+        Text(status.dateText, color = FlipColors.ScreenInk.copy(alpha = 0.62f), fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+    }
+}
+
+/** Renders T9 input and the first three matching app labels in Search. */
+@Composable
+private fun SearchLcdContent(state: LauncherUiState, apps: List<LaunchableApp>, modifier: Modifier) {
+    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        LcdTitle("SEARCH")
+        Text(if (state.searchDigits.isEmpty()) "TYPE 2–9" else state.searchDigits, color = FlipColors.ScreenInk, fontSize = 20.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+        Text(if (state.searchMode == SearchMode.Entry) "${apps.size} MATCHES" else "BROWSE RESULTS", color = FlipColors.ScreenInk.copy(alpha = 0.7f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        apps.take(3).forEachIndexed { index, app -> LcdRow(app.label, state.searchMode == SearchMode.Results && index == state.selectedSearchIndex) }
+        if (apps.isEmpty()) LcdMessage("NO APPS FOUND")
+        state.message?.let { LcdMessage(it) }
+    }
+}
+
+/** Renders the focused six-slot grid used for Quick Launch and Settings. */
+@Composable
+private fun FavoritesLcdContent(title: String, state: LauncherUiState, favorites: List<QuickLaunchFavorite>, modifier: Modifier) {
+    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        LcdTitle(title)
+        favorites.chunked(2).forEachIndexed { rowIndex, row ->
+            Row(Modifier.fillMaxWidth()) { row.forEachIndexed { columnIndex, favorite ->
+                LcdRow("${favorite.icon.glyph} ${favorite.label}", rowIndex * 2 + columnIndex == state.selectedFavoriteIndex, Modifier.weight(1f))
+            } }
+        }
+        state.message?.let { LcdMessage(it) }
+    }
+}
+
+/** Renders the currently editable favorite property values. */
+@Composable
+private fun FavoriteEditorLcdContent(state: LauncherUiState, modifier: Modifier) {
+    val draft = state.editorDraft ?: return
+    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        LcdTitle("EDIT FAVORITE")
+        LcdRow("APP ${FavoriteTargets.find(draft.targetId).appName}", state.editorField == FavoriteField.App)
+        LcdRow("NAME ${draft.label}", state.editorField == FavoriteField.Label)
+        LcdRow("ICON ${draft.icon.glyph}", state.editorField == FavoriteField.Icon)
+    }
+}
+
+/** Renders Dialer's number and any local validation or handoff feedback. */
+@Composable
+private fun DialerLcdContent(state: LauncherUiState, modifier: Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        LcdTitle("DIAL")
+        Text(state.dialedNumber.ifEmpty { "ENTER NUMBER" }, color = FlipColors.ScreenInk, fontSize = 24.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+        state.message?.let { LcdMessage(it) }
+    }
+}
+
+/** Renders a compact LCD heading. */
+@Composable private fun LcdTitle(text: String) = Text(text, color = FlipColors.ScreenInk, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+/** Renders a focused or ordinary LCD list row. */
+@Composable private fun LcdRow(text: String, focused: Boolean, modifier: Modifier = Modifier) = Text(if (focused) "› $text" else "  $text", modifier, color = FlipColors.ScreenInk, fontSize = 11.sp, fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium, maxLines = 1)
+/** Renders concise feedback inside the LCD. */
+@Composable private fun LcdMessage(text: String) = Text(text, color = FlipColors.ScreenInk.copy(alpha = 0.7f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+
 /** Renders decorative search, apps, and settings glyphs at the display's bottom edge. */
 @Composable
-private fun ScreenActions(modifier: Modifier = Modifier) {
+private fun ScreenActions(labels: List<String>, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(42.dp)
             .topBorder(FlipColors.ScreenInk.copy(alpha = 0.38f)),
     ) {
-        listOf("⌕", "▤", "⚙").forEachIndexed { index, glyph ->
+        labels.forEachIndexed { index, label ->
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxSize()
                     .insideDivider(index, FlipColors.ScreenInk.copy(alpha = 0.38f))
-                    .semantics { contentDescription = "Inactive screen action ${index + 1}" },
+                    .semantics { contentDescription = "$label soft-key label" },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(text = glyph, color = FlipColors.ScreenInk, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+                Text(text = label, color = FlipColors.ScreenInk, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -302,16 +398,28 @@ private fun Modifier.insideDivider(index: Int, color: Color): Modifier {
     }
 }
 
+/** Returns the LCD labels activated by the red, yellow, and green action bars. */
+private fun softKeyLabels(state: LauncherUiState): List<String> = when (state.screen) {
+    LauncherScreen.Home -> listOf("SEARCH", "QUICK", "SETTINGS")
+    LauncherScreen.Search -> listOf("CLEAR", if (state.searchMode == SearchMode.Entry) "RESULTS" else "TYPE", "HOME")
+    LauncherScreen.QuickLaunch -> listOf("HOME", "OPEN", "EDIT")
+    LauncherScreen.Settings -> listOf("HOME", "EDIT", "QUICK")
+    LauncherScreen.FavoriteEditor -> listOf("CANCEL", "SAVE", "")
+    LauncherScreen.Dialer -> listOf("DELETE", "TEXT", "CALL")
+}
+
 /** Draws the three colored, intentionally inactive quick-action bars. */
 @Composable
-private fun QuickActionBars() {
+private fun QuickActionBars(controller: LauncherController) {
+    val labels = softKeyLabels(controller.state)
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         listOf(FlipColors.Red, FlipColors.Yellow, FlipColors.Green).forEachIndexed { index, color ->
             Surface(
                 modifier = Modifier
                     .weight(1f)
                     .height(46.dp)
-                    .semantics { contentDescription = "Inactive action bar ${index + 1}" },
+                    .semantics { contentDescription = "${labels[index]} action" }
+                    .clickable(enabled = labels[index].isNotBlank()) { controller.pressSoftKey(index) },
                 shape = RoundedCornerShape(99.dp),
                 color = FlipColors.KeyBottom,
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
@@ -332,7 +440,8 @@ private fun QuickActionBars() {
 
 /** Draws the twelve visual keypad buttons. No tap or hardware-key behavior is attached yet. */
 @Composable
-private fun Keypad(modifier: Modifier = Modifier) {
+private fun Keypad(controller: LauncherController, modifier: Modifier = Modifier) {
+    val keys = if (controller.state.keypadMode() == KeypadMode.Telephone) KeyLabels else NavigationKeyLabels
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -344,9 +453,9 @@ private fun Keypad(modifier: Modifier = Modifier) {
                 .padding(horizontal = 14.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            KeyLabels.chunked(3).forEach { row ->
+            keys.chunked(3).forEach { row ->
                 Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    row.forEach { key -> KeypadKey(key = key, modifier = Modifier.weight(1f)) }
+                    row.forEach { key -> KeypadKey(key = key, controller = controller, modifier = Modifier.weight(1f)) }
                 }
             }
         }
@@ -355,11 +464,14 @@ private fun Keypad(modifier: Modifier = Modifier) {
 
 /** Draws one visual key and its optional telephone-letter label. */
 @Composable
-private fun KeypadKey(key: KeyLabel, modifier: Modifier = Modifier) {
+private fun KeypadKey(key: KeyLabel, controller: LauncherController, modifier: Modifier = Modifier) {
+    val enabled = key.primary.isNotBlank()
+    val primaryWeight = if (key.primary in setOf("↑", "↓", "←", "→")) FontWeight.ExtraBold else FontWeight.Bold
     Surface(
         modifier = modifier
             .fillMaxSize()
-            .semantics { contentDescription = "Inactive keypad key ${key.primary}" },
+            .semantics { contentDescription = if (enabled) "Key ${key.primary}" else "Inactive keypad key" }
+            .clickable(enabled = enabled) { controller.pressKey(key.primary) },
         shape = RoundedCornerShape(18.dp),
         color = Color.Transparent,
         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.09f)),
@@ -376,7 +488,7 @@ private fun KeypadKey(key: KeyLabel, modifier: Modifier = Modifier) {
                 color = FlipColors.KeyText,
                 fontSize = 28.sp,
                 fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
+                fontWeight = primaryWeight,
                 textAlign = TextAlign.Center,
             )
             key.secondary?.let {
@@ -386,9 +498,10 @@ private fun KeypadKey(key: KeyLabel, modifier: Modifier = Modifier) {
                         .align(Alignment.Center)
                         .padding(top = 42.dp),
                     color = FlipColors.KeySubtext,
-                    fontSize = 8.sp,
+                    fontSize = 10.sp,
                     letterSpacing = 1.4.sp,
                     fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
                 )
             }
         }
