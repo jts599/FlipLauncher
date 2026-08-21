@@ -51,7 +51,7 @@ internal enum class SoftAction {
     Search,
     Quick,
     Settings,
-    Clear,
+    Backspace,
     ToggleSearchMode,
     Home,
     Edit,

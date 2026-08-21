@@ -8,6 +8,33 @@ import org.junit.Test
 
 /** Exercises pure grid transitions and controller-level editor navigation with in-memory fakes. */
 class LauncherNavigationTest {
+    /** Confirms the Search backspace action removes one digit instead of clearing the query. */
+    @Test
+    fun searchBackspaceRemovesOneDigit() {
+        val controller = controller()
+        controller.pressSoftAction(SoftAction.Search)
+        controller.pressKey("2")
+        controller.pressKey("3")
+
+        controller.pressSoftAction(SoftAction.Backspace)
+
+        assertEquals("2", controller.state.searchDigits)
+    }
+
+    /** Confirms result browsing pages the focused item into the visible four-row window. */
+    @Test
+    fun searchResultWindowTracksFocusedPage() {
+        assertEquals(0, searchResultWindowStart(3, SearchMode.Results))
+        assertEquals(4, searchResultWindowStart(4, SearchMode.Results))
+        assertEquals(8, searchResultWindowStart(11, SearchMode.Results))
+    }
+
+    /** Confirms entry mode always previews the first matches regardless of stale focus state. */
+    @Test
+    fun searchEntryWindowStartsAtFirstResult() {
+        assertEquals(0, searchResultWindowStart(7, SearchMode.Entry))
+    }
+
     /** Confirms editor focus stops at its first and final vertically arranged properties. */
     @Test
     fun editorOverviewDoesNotWrap() {

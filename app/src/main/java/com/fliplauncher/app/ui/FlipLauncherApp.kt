@@ -39,6 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
@@ -61,6 +62,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Textsms
+import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -104,6 +106,7 @@ private const val MillisPerMinute = 60_000L
 private const val UnknownBatteryLevel = -1
 private const val QuickLaunchColumnCount = 3
 private const val QuickLaunchPageSize = 6
+private const val SearchResultWindowSize = 4
 private val CellSignalBarHeights = listOf(6.dp, 10.dp, 14.dp, 18.dp)
 private val KeyLabels = listOf(
     KeyLabel("1"), KeyLabel("2", "ABC"), KeyLabel("3", "DEF"),
@@ -358,20 +361,100 @@ private fun HomeLcdContent(status: LauncherStatus, message: String?, modifier: M
     }
 }
 
-/** Renders T9 input and the first three matching app labels in Search. */
+/**
+ * Renders a compact retro search field and the visible window of matching applications.
+ *
+ * @param state Current search query, interaction mode, and focused result index.
+ * @param apps Applications matching the current T9 query, in display order.
+ * @param modifier LCD layout constraints supplied by the phone display.
+ */
 @Composable
 private fun SearchLcdContent(state: LauncherUiState, apps: List<LaunchableApp>, modifier: Modifier) {
-    val firstVisibleIndex = if (state.searchMode == SearchMode.Results) (state.selectedSearchIndex / 3) * 3 else 0
-    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        LcdTitle("SEARCH")
-        Text(if (state.searchDigits.isEmpty()) "TYPE 2–9" else state.searchDigits, color = FlipColors.ScreenInk, fontSize = 20.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-        Text(if (state.searchMode == SearchMode.Entry) "${apps.size} MATCHES" else "BROWSE RESULTS", color = FlipColors.ScreenInk.copy(alpha = 0.7f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
-        apps.drop(firstVisibleIndex).take(3).forEachIndexed { index, app ->
-            LcdRow(app.label, state.searchMode == SearchMode.Results && firstVisibleIndex + index == state.selectedSearchIndex)
+    val firstVisibleIndex = searchResultWindowStart(state.selectedSearchIndex, state.searchMode)
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(end = 11.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalAlignment = Alignment.Start,
+        ) {
+            SearchField(state.searchDigits)
+            apps.drop(firstVisibleIndex).take(SearchResultWindowSize).forEachIndexed { index, app ->
+                SearchResultRow(
+                    label = app.label,
+                    focused = state.searchMode == SearchMode.Results && firstVisibleIndex + index == state.selectedSearchIndex,
+                )
+            }
+            if (apps.isEmpty()) SearchEmptyState()
+            state.message?.let { LcdMessage(it) }
         }
-        if (apps.isEmpty()) LcdMessage("NO APPS FOUND")
-        state.message?.let { LcdMessage(it) }
+        QuickLaunchPageIndicator(
+            pageIndex = firstVisibleIndex / SearchResultWindowSize,
+            pageCount = itemPageCount(apps.size, SearchResultWindowSize),
+            modifier = Modifier.align(Alignment.CenterEnd),
+        )
     }
+}
+
+/** Returns the first item in the four-row page containing the focused search result. */
+internal fun searchResultWindowStart(selectedIndex: Int, mode: SearchMode): Int {
+    if (mode == SearchMode.Entry) return 0
+    return selectedIndex.coerceAtLeast(0) / SearchResultWindowSize * SearchResultWindowSize
+}
+
+/** Draws the outlined T9 query field at the top of the search display. */
+@Composable
+private fun SearchField(digits: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(31.dp)
+            .border(1.dp, FlipColors.ScreenInk, RoundedCornerShape(3.dp))
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(15.dp), tint = FlipColors.ScreenInk)
+        Spacer(Modifier.width(7.dp))
+        Text(
+            text = digits.ifEmpty { "TYPE 2–9" },
+            color = FlipColors.ScreenInk.copy(alpha = if (digits.isEmpty()) 0.58f else 1f),
+            fontSize = 15.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.7.sp,
+        )
+    }
+}
+
+/** Draws one fixed-height search result with an inverse LCD treatment when focused. */
+@Composable
+private fun SearchResultRow(label: String, focused: Boolean) {
+    val background = if (focused) FlipColors.ScreenInk else Color.Transparent
+    val foreground = if (focused) FlipColors.ScreenTop else FlipColors.ScreenInk
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(27.dp)
+            .background(background, RoundedCornerShape(2.dp))
+            .padding(horizontal = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(if (focused) "›" else " ", color = foreground, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+        Spacer(Modifier.width(5.dp))
+        Text(label, color = foreground, fontSize = 14.sp, fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium, maxLines = 1)
+    }
+}
+
+/** Displays concise feedback below the search field when the current query has no matches. */
+@Composable
+private fun SearchEmptyState() {
+    Text(
+        text = "NO APPS FOUND",
+        modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
+        color = FlipColors.ScreenInk.copy(alpha = 0.68f),
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 0.5.sp,
+    )
 }
 
 /**
@@ -423,6 +506,9 @@ private fun QuickLaunchLcdContent(
 
 /** Returns the number of six-slot LCD pages needed for this favorite collection. */
 private fun List<QuickLaunchFavorite>.pageCount(): Int = (size + QuickLaunchPageSize - 1) / QuickLaunchPageSize
+
+/** Returns the number of fixed-size pages needed to display an item count. */
+private fun itemPageCount(itemCount: Int, pageSize: Int): Int = (itemCount + pageSize - 1) / pageSize
 
 /**
  * Draws a compact page indicator only when the favorite grid overflows one LCD page.
@@ -757,13 +843,14 @@ private fun SoftKeyIcon(action: SoftAction, state: LauncherUiState) {
         SoftAction.Delete -> Icons.Filled.Delete
         SoftAction.Text -> Icons.Filled.Textsms
         SoftAction.Call -> Icons.Filled.Call
-        SoftAction.Clear, SoftAction.Cancel, SoftAction.Back -> Icons.Filled.Close
+        SoftAction.Backspace -> Icons.AutoMirrored.Filled.Backspace
+        SoftAction.Cancel, SoftAction.Back -> Icons.Filled.Close
         SoftAction.Edit -> Icons.Filled.Edit
         SoftAction.Add -> Icons.Filled.Add
         SoftAction.Move -> Icons.Filled.Launch
         SoftAction.Save, SoftAction.Done -> Icons.Filled.Save
         SoftAction.Home -> Icons.Filled.Home
-        SoftAction.ToggleSearchMode -> if (state.searchMode == SearchMode.Entry) Icons.Filled.List else Icons.Filled.Keyboard
+        SoftAction.ToggleSearchMode -> if (state.searchMode == SearchMode.Entry) Icons.Filled.UnfoldMore else Icons.Filled.Keyboard
         SoftAction.None -> return
     }
     Icon(image, contentDescription = action.name, modifier = Modifier.height(24.dp), tint = FlipColors.ScreenInk)
@@ -790,7 +877,7 @@ private fun softActions(state: LauncherUiState): List<SoftAction> = when {
         listOf(SoftAction.None, SoftAction.None, SoftAction.None)
     else -> when (state.screen) {
         LauncherScreen.Home -> listOf(SoftAction.Search, SoftAction.Quick, SoftAction.Settings)
-        LauncherScreen.Search -> listOf(SoftAction.Clear, SoftAction.ToggleSearchMode, SoftAction.Home)
+        LauncherScreen.Search -> listOf(SoftAction.Backspace, SoftAction.ToggleSearchMode, SoftAction.Home)
         LauncherScreen.QuickLaunch -> listOf(SoftAction.Edit, SoftAction.Add, SoftAction.Home)
         LauncherScreen.Settings -> listOf(SoftAction.Home, SoftAction.Edit, SoftAction.Quick)
         LauncherScreen.FavoriteEditor -> listOf(SoftAction.Save, SoftAction.Delete, SoftAction.Cancel)

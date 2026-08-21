@@ -72,7 +72,7 @@ internal class LauncherController(
         SoftAction.Search -> state = state.copy(screen = LauncherScreen.Search, searchMode = SearchMode.Entry, message = null)
         SoftAction.Quick -> state = state.copy(screen = LauncherScreen.QuickLaunch, message = null)
         SoftAction.Settings -> state = state.copy(screen = LauncherScreen.Settings, message = null)
-        SoftAction.Clear -> state = state.copy(searchDigits = "", selectedSearchIndex = 0, message = null)
+        SoftAction.Backspace -> state = reduceBackspace(state).copy(message = null)
         SoftAction.ToggleSearchMode -> state = state.copy(searchMode = state.searchMode.toggle(), selectedSearchIndex = 0)
         SoftAction.Home -> goHome()
         SoftAction.Edit -> openSelectedFavoriteEditor()
