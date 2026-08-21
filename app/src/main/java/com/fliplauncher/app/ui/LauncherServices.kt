@@ -41,14 +41,16 @@ internal class DataStoreFavoriteRepository(private val context: Context) : Favor
                 if (exception is IOException) emit(emptyPreferences()) else throw exception
             }
             .first()
-        return FavoriteTargets.defaults().mapIndexed { index, default ->
-            preferences[favoriteSlotKey(index)]?.toFavoriteOrNull() ?: default
-        }
+        val saved = preferences.asMap().entries
+            .mapNotNull { entry -> entry.key.name.favoriteIndexOrNull()?.let { index -> index to (entry.value as? String)?.toFavoriteOrNull() } }
+            .sortedBy { (index, _) -> index }
+            .mapNotNull { (_, favorite) -> favorite }
+        return saved.withSeedFavorites()
     }
 
     /** Replaces the persisted slots after validating the configured slot count. */
     override suspend fun save(favorites: List<QuickLaunchFavorite>) {
-        require(favorites.size == FavoriteTargets.all.size) { "Quick Launch requires every configured favorite." }
+        require(favorites.isNotEmpty()) { "Quick Launch requires at least one favorite." }
         context.favoriteDataStore.edit { preferences ->
             favorites.forEachIndexed { index, favorite -> preferences[favoriteSlotKey(index)] = favorite.serialize() }
         }
@@ -94,8 +96,8 @@ internal interface ExternalNavigator {
     /** Launches a concrete searchable app activity. */
     fun launchApp(app: LaunchableApp): HandoffResult
 
-    /** Launches a configured mock favorite by its package name. */
-    fun launchFavorite(target: FavoriteTarget): HandoffResult
+    /** Launches a configured favorite through its selected activity or package fallback. */
+    fun launchFavorite(target: FavoriteLaunchTarget): HandoffResult
 
     /** Opens Android's dialer populated with a valid user-entered phone number. */
     fun openDialer(number: String): HandoffResult
@@ -113,8 +115,13 @@ internal class AndroidExternalNavigator(private val context: Context) : External
             .apply { component = ComponentName(app.packageName, app.className) },
     )
 
-    /** Resolves a mock favorite's current package entry point before launching it. */
-    override fun launchFavorite(target: FavoriteTarget): HandoffResult {
+    /** Resolves a selected component before falling back to the app package entry point. */
+    override fun launchFavorite(target: FavoriteLaunchTarget): HandoffResult {
+        if (target.className != null) {
+            return start(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).apply {
+                component = ComponentName(target.packageName, target.className)
+            })
+        }
         val intent = context.packageManager.getLaunchIntentForPackage(target.packageName) ?: return HandoffResult.Unavailable
         return start(intent)
     }
@@ -164,14 +171,48 @@ internal fun filterAppsByT9(apps: List<LaunchableApp>, digits: String): List<Lau
 /** Creates a stable DataStore key for one zero-based Quick Launch slot. */
 private fun favoriteSlotKey(index: Int) = stringPreferencesKey(FavoriteSlotPrefix + index)
 
+/** Extracts a non-negative favorite index from a DataStore preference key name. */
+private fun String.favoriteIndexOrNull(): Int? = takeIf { startsWith(FavoriteSlotPrefix) }
+    ?.removePrefix(FavoriteSlotPrefix)
+    ?.toIntOrNull()
+
+/** Appends new bundled examples so existing installs can exercise newly added grid pages. */
+private fun List<QuickLaunchFavorite>.withSeedFavorites(): List<QuickLaunchFavorite> {
+    if (isEmpty()) return FavoriteTargets.defaults()
+    return this + FavoriteTargets.defaults().drop(size)
+}
+
 /** Serializes the simple favorite record without exposing platform objects to persistence. */
-private fun QuickLaunchFavorite.serialize(): String = listOf(targetId, label, icon.name).joinToString(FavoriteFieldSeparator)
+private fun QuickLaunchFavorite.serialize(): String = listOf(
+    target.appName,
+    target.packageName,
+    target.className.orEmpty(),
+    label,
+    icon.name,
+).joinToString(FavoriteFieldSeparator)
 
 /** Parses and validates a stored favorite record, returning null for malformed values. */
 private fun String.toFavoriteOrNull(): QuickLaunchFavorite? {
     val parts = split(FavoriteFieldSeparator)
-    val target = parts.getOrNull(0)?.let(FavoriteTargets::find) ?: return null
-    val label = parts.getOrNull(1)?.takeIf { it in target.labels } ?: return null
-    val icon = parts.getOrNull(2)?.let { name -> FavoriteIcon.values().firstOrNull { it.name == name } } ?: return null
-    return QuickLaunchFavorite(target.id, label, icon)
+    return if (parts.size == 3) legacyFavorite(parts) else currentFavorite(parts)
 }
+
+/** Converts the previous target-id record format into a package-launch fallback favorite. */
+private fun legacyFavorite(parts: List<String>): QuickLaunchFavorite? {
+    val legacyTarget = parts.getOrNull(0)?.let(FavoriteTargets::find) ?: return null
+    val label = parts.getOrNull(1)?.takeIf { it in legacyTarget.labels } ?: return null
+    val icon = parts.getOrNull(2).toFavoriteIconOrNull() ?: return null
+    return QuickLaunchFavorite(FavoriteLaunchTarget(legacyTarget.appName, legacyTarget.packageName), label, icon)
+}
+
+/** Parses a current app-activity favorite record while rejecting incomplete values. */
+private fun currentFavorite(parts: List<String>): QuickLaunchFavorite? {
+    val appName = parts.getOrNull(0)?.takeIf(String::isNotBlank) ?: return null
+    val packageName = parts.getOrNull(1)?.takeIf(String::isNotBlank) ?: return null
+    val label = parts.getOrNull(3)?.takeIf(String::isNotBlank) ?: return null
+    val icon = parts.getOrNull(4).toFavoriteIconOrNull() ?: return null
+    return QuickLaunchFavorite(FavoriteLaunchTarget(appName, packageName, parts.getOrNull(2).orEmpty().ifBlank { null }), label, icon)
+}
+
+/** Converts a persisted enum name into a valid favorite icon. */
+private fun String?.toFavoriteIconOrNull(): FavoriteIcon? = FavoriteIcon.values().firstOrNull { it.name == this }

@@ -30,9 +30,40 @@ internal enum class SearchMode {
 
 /** Identifies the three editable properties of a Quick Launch favorite. */
 internal enum class FavoriteField {
-    App,
-    Label,
     Icon,
+    Name,
+    App,
+}
+
+/** Identifies the single active interaction nested inside the favorite editor. */
+internal enum class FavoriteEditorMode {
+    Overview,
+    NameEditing,
+    IconPicker,
+    AppPicker,
+    Move,
+    DeleteConfirmation,
+}
+
+/** Identifies one semantic action assigned to a colored contextual button. */
+internal enum class SoftAction {
+    None,
+    Search,
+    Quick,
+    Settings,
+    Clear,
+    ToggleSearchMode,
+    Home,
+    Edit,
+    Add,
+    Save,
+    Move,
+    Cancel,
+    Back,
+    Done,
+    Delete,
+    Text,
+    Call,
 }
 
 /** Supplies the monochrome glyph chosen for a Quick Launch favorite. */
@@ -48,6 +79,7 @@ internal enum class FavoriteIcon {
     Contacts,
     Mail,
     Music,
+    Apps,
 }
 
 /** Describes a Pixel-style mock app available to the Quick Launch editor. */
@@ -59,18 +91,25 @@ internal data class FavoriteTarget(
     val defaultIcon: FavoriteIcon,
 )
 
+/** Identifies an app activity that can be launched from a Quick Launch favorite. */
+internal data class FavoriteLaunchTarget(
+    val appName: String,
+    val packageName: String,
+    val className: String? = null,
+)
+
 /** Represents one persisted Quick Launch slot; the launcher pages arbitrary slot counts. */
 internal data class QuickLaunchFavorite(
-    val targetId: String,
+    val target: FavoriteLaunchTarget,
     val label: String,
     val icon: FavoriteIcon,
 )
 
 /** Holds mutable-in-concept editor selections as an immutable value. */
 internal data class FavoriteDraft(
-    val targetId: String,
-    val label: String,
-    val icon: FavoriteIcon,
+    val target: FavoriteLaunchTarget? = null,
+    val label: String = "",
+    val icon: FavoriteIcon = FavoriteIcon.Apps,
 )
 
 /** Describes one Android activity that FlipLauncher can show in Search and launch explicitly. */
@@ -87,9 +126,12 @@ internal data class LauncherUiState(
     val searchDigits: String = "",
     val selectedSearchIndex: Int = 0,
     val selectedFavoriteIndex: Int = 0,
-    val editorField: FavoriteField = FavoriteField.App,
+    val editorField: FavoriteField = FavoriteField.Icon,
     val editorSlotIndex: Int = 0,
     val editorDraft: FavoriteDraft? = null,
+    val isAddingFavorite: Boolean = false,
+    val editorMode: FavoriteEditorMode = FavoriteEditorMode.Overview,
+    val selectedFavoriteIconIndex: Int = 0,
     val dialedNumber: String = "",
     val message: String? = null,
 ) {
@@ -122,6 +164,10 @@ internal object FavoriteTargets {
 
     /** Returns one initial favorite for every supplied mock target. */
     fun defaults(): List<QuickLaunchFavorite> = all.map { target ->
-        QuickLaunchFavorite(target.id, target.labels.first(), target.defaultIcon)
+        QuickLaunchFavorite(
+            target = FavoriteLaunchTarget(target.appName, target.packageName),
+            label = target.labels.first(),
+            icon = target.defaultIcon,
+        )
     }
 }

@@ -37,7 +37,11 @@ internal fun reduceNavigation(
             columnCount = favoriteColumnCount(state.screen),
         ),
     )
-    LauncherScreen.FavoriteEditor -> reduceEditorNavigation(state, direction)
+    LauncherScreen.FavoriteEditor -> when (state.editorMode) {
+        FavoriteEditorMode.IconPicker -> reduceIconPickerNavigation(state, direction)
+        FavoriteEditorMode.Overview -> reduceEditorNavigation(state, direction)
+        else -> state
+    }
     else -> state
 }
 
@@ -47,8 +51,10 @@ internal fun openFavoriteEditor(state: LauncherUiState, favorites: List<QuickLau
     return state.copy(
         screen = LauncherScreen.FavoriteEditor,
         editorSlotIndex = state.selectedFavoriteIndex,
-        editorField = FavoriteField.App,
-        editorDraft = FavoriteDraft(favorite.targetId, favorite.label, favorite.icon),
+        editorField = FavoriteField.Icon,
+        editorDraft = FavoriteDraft(favorite.target, favorite.label, favorite.icon),
+        isAddingFavorite = false,
+        editorMode = FavoriteEditorMode.Overview,
         message = null,
     )
 }
@@ -101,41 +107,30 @@ private fun moveGridIndex(index: Int, direction: NavigationDirection, itemCount:
         NavigationDirection.Left -> if (index % columnCount == 0) index else index - 1
         NavigationDirection.Right -> if (index % columnCount == columnCount - 1) index else index + 1
     }
-    return candidate.coerceIn(0, itemCount - 1)
+    return candidate.takeIf { it in 0 until itemCount } ?: index
 }
 
-/** Moves between editor fields or cycles the current draft value. */
+/** Moves between editor fields without wrapping past the first or final value. */
 private fun reduceEditorNavigation(state: LauncherUiState, direction: NavigationDirection): LauncherUiState {
-    val draft = state.editorDraft ?: return state
+    if (state.editorDraft == null) return state
     return when (direction) {
-        NavigationDirection.Up -> state.copy(editorField = state.editorField.previous())
-        NavigationDirection.Down -> state.copy(editorField = state.editorField.next())
-        NavigationDirection.Left -> state.copy(editorDraft = draft.cycle(state.editorField, -1))
-        NavigationDirection.Right -> state.copy(editorDraft = draft.cycle(state.editorField, 1))
+        NavigationDirection.Up -> state.copy(editorField = state.editorField.previousOrSame())
+        NavigationDirection.Down -> state.copy(editorField = state.editorField.nextOrSame())
+        NavigationDirection.Left, NavigationDirection.Right -> state
     }
 }
 
-/** Returns the preceding editor field, wrapping from App to Icon. */
-private fun FavoriteField.previous(): FavoriteField = FavoriteField.values()[(ordinal + FavoriteField.values().size - 1) % FavoriteField.values().size]
+/** Returns the preceding editor field, stopping at Icon. */
+private fun FavoriteField.previousOrSame(): FavoriteField = FavoriteField.values()[maxOf(0, ordinal - 1)]
 
-/** Returns the following editor field, wrapping from Icon to App. */
-private fun FavoriteField.next(): FavoriteField = FavoriteField.values()[(ordinal + 1) % FavoriteField.values().size]
+/** Returns the following editor field, stopping at App. */
+private fun FavoriteField.nextOrSame(): FavoriteField = FavoriteField.values()[minOf(FavoriteField.values().lastIndex, ordinal + 1)]
 
-/** Cycles one favorite property while preserving the other draft selections. */
-private fun FavoriteDraft.cycle(field: FavoriteField, step: Int): FavoriteDraft = when (field) {
-    FavoriteField.App -> copy(targetId = FavoriteTargets.all.map { target -> target.id }.cycleValue(targetId, step)).withValidLabel()
-    FavoriteField.Label -> copy(label = FavoriteTargets.find(targetId).labels.cycleValue(label, step))
-    FavoriteField.Icon -> copy(icon = FavoriteIcon.values().toList().cycleValue(icon, step))
-}
+/** Moves the focused icon within the three-column full-screen icon picker. */
+private fun reduceIconPickerNavigation(state: LauncherUiState, direction: NavigationDirection): LauncherUiState = state.copy(
+    selectedFavoriteIconIndex = moveGridIndex(state.selectedFavoriteIconIndex, direction, FavoriteIcon.values().size, QuickLaunchColumnCount),
+)
 
-/** Replaces a label that is not valid for the selected target with that target's default label. */
-private fun FavoriteDraft.withValidLabel(): FavoriteDraft {
-    val target = FavoriteTargets.find(targetId)
-    return if (label in target.labels) this else copy(label = target.labels.first())
-}
-
-/** Selects the next or previous item in a non-empty list, wrapping at both ends. */
-private fun <T> List<T>.cycleValue(current: T, step: Int): T {
-    val index = indexOf(current).coerceAtLeast(0)
-    return this[(index + step + size) % size]
-}
+/** Returns the closest valid Quick Launch neighbor without wrapping across grid edges. */
+internal fun moveFavoriteIndex(index: Int, direction: NavigationDirection, itemCount: Int): Int =
+    moveGridIndex(index, direction, itemCount, QuickLaunchColumnCount)

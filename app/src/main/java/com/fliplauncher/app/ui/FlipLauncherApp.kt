@@ -6,10 +6,15 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.text.format.DateFormat
+import android.widget.ImageView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,16 +23,22 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
@@ -58,6 +69,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -66,13 +79,22 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
@@ -95,6 +117,19 @@ private val NavigationKeyLabels = listOf(
     KeyLabel(""), KeyLabel("↓"), KeyLabel(""),
     KeyLabel(""), KeyLabel(""), KeyLabel(""),
 )
+private val VerticalNavigationKeyLabels = listOf(
+    KeyLabel(""), KeyLabel("↑"), KeyLabel(""),
+    KeyLabel(""), KeyLabel("OK"), KeyLabel(""),
+    KeyLabel(""), KeyLabel("↓"), KeyLabel(""),
+    KeyLabel(""), KeyLabel(""), KeyLabel(""),
+)
+private val DisabledKeyLabels = List(12) { KeyLabel("") }
+private val ConfirmationKeyLabels = listOf(
+    KeyLabel(""), KeyLabel(""), KeyLabel(""),
+    KeyLabel(""), KeyLabel("OK"), KeyLabel(""),
+    KeyLabel(""), KeyLabel(""), KeyLabel(""),
+    KeyLabel(""), KeyLabel(""), KeyLabel(""),
+)
 
 /** Represents one visual key on the currently non-interactive numeric keypad. */
 private data class KeyLabel(val primary: String, val secondary: String? = null)
@@ -109,9 +144,17 @@ fun FlipLauncherApp() {
     }
     val status = rememberLauncherStatus()
     LaunchedEffect(controller) { controller.load() }
-    BackHandler { controller.goHome() }
+    BackHandler { controller.handleBack() }
     FlipLauncherTheme {
-        FlipPhoneFrame(status = status, controller = controller, modifier = Modifier.fillMaxSize())
+        Box(Modifier.fillMaxSize()) {
+            FlipPhoneFrame(status = status, controller = controller, modifier = Modifier.fillMaxSize())
+            NativeAppPicker(
+                visible = controller.isAppPickerVisible,
+                apps = controller.apps,
+                onDismiss = controller::dismissAppPicker,
+                onSelect = controller::selectPickedApp,
+            )
+        }
     }
 }
 
@@ -206,7 +249,7 @@ private fun ScreenSurface(status: LauncherStatus, controller: LauncherController
                 .padding(end = 16.dp, top = 14.dp),
         )
         LauncherLcdContent(status, controller, Modifier.align(Alignment.Center).padding(horizontal = 14.dp, vertical = 38.dp))
-        ScreenActions(softKeyLabels(controller.state), modifier = Modifier.align(Alignment.BottomCenter))
+        ScreenActions(softActions(controller.state), controller.state, modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
 
@@ -300,7 +343,7 @@ private fun LauncherLcdContent(status: LauncherStatus, controller: LauncherContr
         LauncherScreen.Search -> SearchLcdContent(state, controller.filteredApps(), modifier)
         LauncherScreen.QuickLaunch -> QuickLaunchLcdContent(state, controller.favorites, modifier)
         LauncherScreen.Settings -> FavoritesLcdContent("SETTINGS", state, controller.favorites, modifier)
-        LauncherScreen.FavoriteEditor -> FavoriteEditorLcdContent(state, modifier)
+        LauncherScreen.FavoriteEditor -> FavoriteEditorLcdContent(state, controller, modifier)
         LauncherScreen.Dialer -> DialerLcdContent(state, modifier)
     }
 }
@@ -318,11 +361,14 @@ private fun HomeLcdContent(status: LauncherStatus, message: String?, modifier: M
 /** Renders T9 input and the first three matching app labels in Search. */
 @Composable
 private fun SearchLcdContent(state: LauncherUiState, apps: List<LaunchableApp>, modifier: Modifier) {
+    val firstVisibleIndex = if (state.searchMode == SearchMode.Results) (state.selectedSearchIndex / 3) * 3 else 0
     Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         LcdTitle("SEARCH")
         Text(if (state.searchDigits.isEmpty()) "TYPE 2–9" else state.searchDigits, color = FlipColors.ScreenInk, fontSize = 20.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
         Text(if (state.searchMode == SearchMode.Entry) "${apps.size} MATCHES" else "BROWSE RESULTS", color = FlipColors.ScreenInk.copy(alpha = 0.7f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
-        apps.take(3).forEachIndexed { index, app -> LcdRow(app.label, state.searchMode == SearchMode.Results && index == state.selectedSearchIndex) }
+        apps.drop(firstVisibleIndex).take(3).forEachIndexed { index, app ->
+            LcdRow(app.label, state.searchMode == SearchMode.Results && firstVisibleIndex + index == state.selectedSearchIndex)
+        }
         if (apps.isEmpty()) LcdMessage("NO APPS FOUND")
         state.message?.let { LcdMessage(it) }
     }
@@ -403,27 +449,191 @@ private fun QuickLaunchPageIndicator(pageIndex: Int, pageCount: Int, modifier: M
 /** Renders the compact six-slot list used by the Settings page. */
 @Composable
 private fun FavoritesLcdContent(title: String, state: LauncherUiState, favorites: List<QuickLaunchFavorite>, modifier: Modifier) {
-    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        LcdTitle(title)
-        favorites.chunked(2).forEachIndexed { rowIndex, row ->
-            Row(Modifier.fillMaxWidth()) { row.forEachIndexed { columnIndex, favorite ->
-                FavoriteLcdRow(favorite, rowIndex * 2 + columnIndex == state.selectedFavoriteIndex, Modifier.weight(1f))
-            } }
+    val pageIndex = state.selectedFavoriteIndex / QuickLaunchPageSize
+    val firstItemIndex = pageIndex * QuickLaunchPageSize
+    Box(modifier.fillMaxWidth()) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            LcdTitle(title)
+            favorites.drop(firstItemIndex).take(QuickLaunchPageSize).chunked(2).forEachIndexed { rowIndex, row ->
+                Row(Modifier.fillMaxWidth()) {
+                    repeat(2) { columnIndex ->
+                        val favorite = row.getOrNull(columnIndex)
+                        if (favorite == null) Spacer(Modifier.weight(1f)) else FavoriteLcdRow(
+                            favorite,
+                            firstItemIndex + rowIndex * 2 + columnIndex == state.selectedFavoriteIndex,
+                            Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+            state.message?.let { LcdMessage(it) }
         }
+        QuickLaunchPageIndicator(pageIndex, favorites.pageCount(), Modifier.align(Alignment.CenterEnd))
+    }
+}
+
+/** Renders and edits the icon, custom name, and installed app selected for one favorite. */
+@Composable
+private fun FavoriteEditorLcdContent(state: LauncherUiState, controller: LauncherController, modifier: Modifier) {
+    val draft = state.editorDraft ?: return
+    if (state.editorMode == FavoriteEditorMode.IconPicker) {
+        FavoriteIconPickerLcdContent(state, modifier)
+        return
+    }
+    if (state.editorMode == FavoriteEditorMode.Move) {
+        FavoriteMoveLcdContent(state, controller.editorPreviewFavorites(), modifier)
+        return
+    }
+    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        EditorValueIcon(draft.icon, state.editorField == FavoriteField.Icon)
+        if (state.editorMode == FavoriteEditorMode.NameEditing) {
+            EditorNameInput(draft, controller)
+        } else {
+            Text(
+                text = draft.label.ifBlank { if (state.isAddingFavorite) "NEW APP" else "UNTITLED" },
+                color = FlipColors.ScreenInk.copy(alpha = if (state.editorField == FavoriteField.Name) 1f else 0.68f),
+                fontSize = 16.sp,
+                fontWeight = if (state.editorField == FavoriteField.Name) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1,
+            )
+        }
+        Text(
+            text = draft.target?.packageName ?: "SELECT APP",
+            color = FlipColors.ScreenInk.copy(alpha = if (state.editorField == FavoriteField.App) 1f else 0.52f),
+            fontSize = 9.sp,
+            fontWeight = if (state.editorField == FavoriteField.App) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
+        )
+        if (state.editorMode == FavoriteEditorMode.DeleteConfirmation) LcdMessage("DELETE THIS APP?")
         state.message?.let { LcdMessage(it) }
     }
 }
 
-/** Renders the currently editable favorite property values. */
+/** Draws the large chosen icon and outlines it while the icon value has keypad focus. */
 @Composable
-private fun FavoriteEditorLcdContent(state: LauncherUiState, modifier: Modifier) {
-    val draft = state.editorDraft ?: return
-    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        LcdTitle("EDIT FAVORITE")
-        LcdRow("APP ${FavoriteTargets.find(draft.targetId).appName}", state.editorField == FavoriteField.App)
-        LcdRow("NAME ${draft.label}", state.editorField == FavoriteField.Label)
-        LcdRow("ICON ${draft.icon.name.uppercase()}", state.editorField == FavoriteField.Icon)
+private fun EditorValueIcon(icon: FavoriteIcon, selected: Boolean) {
+    Box(
+        modifier = Modifier
+            .size(56.dp)
+            .then(if (selected) Modifier.border(1.dp, FlipColors.ScreenInk, RoundedCornerShape(4.dp)) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        FavoriteIconGraphic(icon, iconSize = 42.dp)
     }
+}
+
+/** Renders the software keyboard field only after the focused display-name value is confirmed. */
+@Composable
+private fun EditorNameInput(draft: FavoriteDraft, controller: LauncherController) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboard?.show()
+    }
+    BasicTextField(
+        value = draft.label,
+        onValueChange = controller::updateFavoriteName,
+        modifier = Modifier.focusRequester(focusRequester).fillMaxWidth(),
+        textStyle = androidx.compose.ui.text.TextStyle(color = FlipColors.ScreenInk, fontSize = 12.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { controller.finishNameEditing() }),
+        decorationBox = { innerTextField -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { innerTextField() } },
+    )
+}
+
+/** Displays every available monochrome icon in a full-screen three-column selection grid. */
+@Composable
+private fun FavoriteIconPickerLcdContent(state: LauncherUiState, modifier: Modifier) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        FavoriteIcon.values().toList().chunked(QuickLaunchColumnCount).forEachIndexed { rowIndex, row ->
+            Row(Modifier.fillMaxWidth()) {
+                row.forEachIndexed { columnIndex, icon ->
+                    val selected = rowIndex * QuickLaunchColumnCount + columnIndex == state.selectedFavoriteIconIndex
+                    Box(
+                        modifier = Modifier.weight(1f).height(40.dp).padding(horizontal = 4.dp)
+                            .then(if (selected) Modifier.border(1.dp, FlipColors.ScreenInk, RoundedCornerShape(4.dp)) else Modifier),
+                        contentAlignment = Alignment.Center,
+                    ) { FavoriteIconGraphic(icon, iconSize = 25.dp) }
+                }
+            }
+        }
+    }
+}
+
+/** Renders the editable Quick Launch grid during temporary reorder mode. */
+@Composable
+private fun FavoriteMoveLcdContent(state: LauncherUiState, favorites: List<QuickLaunchFavorite>, modifier: Modifier) {
+    val pageIndex = state.editorSlotIndex / QuickLaunchPageSize
+    val firstItemIndex = pageIndex * QuickLaunchPageSize
+    Box(modifier = modifier.fillMaxWidth()) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            favorites.drop(firstItemIndex).take(QuickLaunchPageSize).chunked(QuickLaunchColumnCount).forEachIndexed { rowIndex, row ->
+                Row(Modifier.fillMaxWidth()) {
+                    repeat(QuickLaunchColumnCount) { columnIndex ->
+                        val favorite = row.getOrNull(columnIndex)
+                        if (favorite == null) Spacer(Modifier.weight(1f)) else FavoriteLcdTile(
+                            favorite = favorite,
+                            focused = firstItemIndex + rowIndex * QuickLaunchColumnCount + columnIndex == state.editorSlotIndex,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+            LcdMessage("ARROWS TO MOVE")
+        }
+        QuickLaunchPageIndicator(pageIndex, favorites.pageCount(), Modifier.align(Alignment.CenterEnd))
+    }
+}
+
+/** Opens a native searchable bottom sheet for choosing the launcher activity behind a favorite. */
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun NativeAppPicker(
+    visible: Boolean,
+    apps: List<LaunchableApp>,
+    onDismiss: () -> Unit,
+    onSelect: (LaunchableApp) -> Unit,
+) {
+    if (!visible) return
+    var query by remember { mutableStateOf("") }
+    val matches = remember(query, apps) { apps.filter { app -> app.label.contains(query, ignoreCase = true) } }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
+            Text("Choose app", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("Search apps") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            LazyColumn(modifier = Modifier.heightIn(max = 360.dp).padding(top = 10.dp)) {
+                items(matches, key = { app -> "${app.packageName}/${app.className}" }) { app ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { onSelect(app) }.padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        InstalledAppIcon(app)
+                        Spacer(Modifier.width(14.dp))
+                        Text(text = app.label, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+            }
+            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text("Cancel") }
+        }
+    }
+}
+
+/** Displays an installed activity's launcher icon inside the native app picker row. */
+@Composable
+private fun InstalledAppIcon(app: LaunchableApp) {
+    val context = LocalContext.current
+    val icon = remember(app.packageName, app.className) {
+        runCatching { context.packageManager.getActivityIcon(android.content.ComponentName(app.packageName, app.className)) }
+            .getOrElse { runCatching { context.packageManager.getApplicationIcon(app.packageName) }.getOrNull() }
+    }
+    AndroidView(
+        factory = { viewContext -> ImageView(viewContext).apply { scaleType = ImageView.ScaleType.CENTER_INSIDE } },
+        update = { imageView -> imageView.setImageDrawable(icon) },
+        modifier = Modifier.size(36.dp),
+    )
 }
 
 /** Renders Dialer's number and any local validation or handoff feedback. */
@@ -464,7 +674,7 @@ private fun FavoriteLcdTile(favorite: QuickLaunchFavorite, focused: Boolean, mod
             .padding(vertical = 3.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        FavoriteIconGraphic(favorite.icon, Modifier.size(29.dp))
+        FavoriteIconGraphic(favorite.icon, iconSize = 29.dp)
         Text(
             text = favorite.label,
             color = FlipColors.ScreenInk,
@@ -490,10 +700,11 @@ private fun FavoriteLcdRow(favorite: QuickLaunchFavorite, focused: Boolean, modi
  * Renders the filled monochrome glyph assigned to a favorite.
  *
  * @param icon Configured semantic app icon.
- * @param modifier Controls the glyph's displayed size and placement.
+ * @param modifier Controls the glyph's placement.
+ * @param iconSize Rendered size; callers increase it for Quick Launch tiles.
  */
 @Composable
-private fun FavoriteIconGraphic(icon: FavoriteIcon, modifier: Modifier = Modifier) {
+private fun FavoriteIconGraphic(icon: FavoriteIcon, modifier: Modifier = Modifier, iconSize: Dp = 15.dp) {
     val image = when (icon) {
         FavoriteIcon.Phone -> Icons.Filled.Call
         FavoriteIcon.Message -> Icons.Filled.Message
@@ -506,29 +717,30 @@ private fun FavoriteIconGraphic(icon: FavoriteIcon, modifier: Modifier = Modifie
         FavoriteIcon.Contacts -> Icons.Filled.Contacts
         FavoriteIcon.Mail -> Icons.Filled.Mail
         FavoriteIcon.Music -> Icons.Filled.MusicNote
+        FavoriteIcon.Apps -> Icons.Filled.Apps
     }
-    Icon(image, contentDescription = null, modifier = modifier.height(15.dp), tint = FlipColors.ScreenInk)
+    Icon(image, contentDescription = null, modifier = modifier.size(iconSize), tint = FlipColors.ScreenInk)
 }
 
 /** Renders decorative search, apps, and settings glyphs at the display's bottom edge. */
 @Composable
-private fun ScreenActions(labels: List<String>, modifier: Modifier = Modifier) {
+private fun ScreenActions(actions: List<SoftAction>, state: LauncherUiState, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(42.dp)
             .topBorder(FlipColors.ScreenInk.copy(alpha = 0.38f)),
     ) {
-        labels.forEachIndexed { index, label ->
+        actions.forEachIndexed { index, action ->
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxSize()
                     .insideDivider(index, FlipColors.ScreenInk.copy(alpha = 0.38f))
-                    .semantics { contentDescription = "$label soft-key label" },
+                    .semantics { contentDescription = "${action.name} soft-key label" },
                 contentAlignment = Alignment.Center,
             ) {
-                SoftKeyIcon(label)
+                SoftKeyIcon(action, state)
             }
         }
     }
@@ -536,24 +748,25 @@ private fun ScreenActions(labels: List<String>, modifier: Modifier = Modifier) {
 
 /** Maps contextual actions onto the launcher-wide bold monochrome icon vocabulary. */
 @Composable
-private fun SoftKeyIcon(label: String) {
-    if (label.isBlank()) return
-    val image = when (label) {
-        "SEARCH" -> Icons.Filled.Search
-        "QUICK" -> Icons.Filled.Apps
-        "SETTINGS" -> Icons.Filled.Settings
-        "DELETE" -> Icons.Filled.Delete
-        "TEXT" -> Icons.Filled.Textsms
-        "CALL", "OPEN" -> Icons.Filled.Call
-        "CLEAR", "CANCEL" -> Icons.Filled.Close
-        "EDIT" -> Icons.Filled.Edit
-        "SAVE" -> Icons.Filled.Save
-        "HOME" -> Icons.Filled.Home
-        "RESULTS" -> Icons.Filled.List
-        "TYPE" -> Icons.Filled.Keyboard
-        else -> Icons.Filled.Launch
+private fun SoftKeyIcon(action: SoftAction, state: LauncherUiState) {
+    if (action == SoftAction.None) return
+    val image = when (action) {
+        SoftAction.Search -> Icons.Filled.Search
+        SoftAction.Quick -> Icons.Filled.Apps
+        SoftAction.Settings -> Icons.Filled.Settings
+        SoftAction.Delete -> Icons.Filled.Delete
+        SoftAction.Text -> Icons.Filled.Textsms
+        SoftAction.Call -> Icons.Filled.Call
+        SoftAction.Clear, SoftAction.Cancel, SoftAction.Back -> Icons.Filled.Close
+        SoftAction.Edit -> Icons.Filled.Edit
+        SoftAction.Add -> Icons.Filled.Add
+        SoftAction.Move -> Icons.Filled.Launch
+        SoftAction.Save, SoftAction.Done -> Icons.Filled.Save
+        SoftAction.Home -> Icons.Filled.Home
+        SoftAction.ToggleSearchMode -> if (state.searchMode == SearchMode.Entry) Icons.Filled.List else Icons.Filled.Keyboard
+        SoftAction.None -> return
     }
-    Icon(image, contentDescription = label, modifier = Modifier.height(24.dp), tint = FlipColors.ScreenInk)
+    Icon(image, contentDescription = action.name, modifier = Modifier.height(24.dp), tint = FlipColors.ScreenInk)
 }
 
 /** Draws the top boundary for the screen action strip without enclosing its outer edges. */
@@ -570,27 +783,33 @@ private fun Modifier.insideDivider(index: Int, color: Color): Modifier {
 }
 
 /** Returns the LCD labels activated by the red, yellow, and green action bars. */
-private fun softKeyLabels(state: LauncherUiState): List<String> = when (state.screen) {
-    LauncherScreen.Home -> listOf("SEARCH", "QUICK", "SETTINGS")
-    LauncherScreen.Search -> listOf("CLEAR", if (state.searchMode == SearchMode.Entry) "RESULTS" else "TYPE", "HOME")
-    LauncherScreen.QuickLaunch -> listOf("EDIT", "", "HOME")
-    LauncherScreen.Settings -> listOf("HOME", "EDIT", "QUICK")
-    LauncherScreen.FavoriteEditor -> listOf("CANCEL", "SAVE", "")
-    LauncherScreen.Dialer -> listOf("DELETE", "TEXT", "CALL")
+private fun softActions(state: LauncherUiState): List<SoftAction> = when {
+    state.screen == LauncherScreen.FavoriteEditor && state.editorMode in setOf(FavoriteEditorMode.IconPicker, FavoriteEditorMode.Move, FavoriteEditorMode.NameEditing, FavoriteEditorMode.DeleteConfirmation) ->
+        listOf(SoftAction.Back, SoftAction.None, SoftAction.Done)
+    state.screen == LauncherScreen.FavoriteEditor && state.editorMode == FavoriteEditorMode.AppPicker ->
+        listOf(SoftAction.None, SoftAction.None, SoftAction.None)
+    else -> when (state.screen) {
+        LauncherScreen.Home -> listOf(SoftAction.Search, SoftAction.Quick, SoftAction.Settings)
+        LauncherScreen.Search -> listOf(SoftAction.Clear, SoftAction.ToggleSearchMode, SoftAction.Home)
+        LauncherScreen.QuickLaunch -> listOf(SoftAction.Edit, SoftAction.Add, SoftAction.Home)
+        LauncherScreen.Settings -> listOf(SoftAction.Home, SoftAction.Edit, SoftAction.Quick)
+        LauncherScreen.FavoriteEditor -> listOf(SoftAction.Save, SoftAction.Delete, SoftAction.Cancel)
+        LauncherScreen.Dialer -> listOf(SoftAction.Delete, SoftAction.Text, SoftAction.Call)
+    }
 }
 
 /** Draws the three colored, intentionally inactive quick-action bars. */
 @Composable
 private fun QuickActionBars(controller: LauncherController) {
-    val labels = softKeyLabels(controller.state)
+    val actions = softActions(controller.state)
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         listOf(FlipColors.Red, FlipColors.Yellow, FlipColors.Green).forEachIndexed { index, color ->
             Surface(
                 modifier = Modifier
                     .weight(1f)
                     .height(46.dp)
-                    .semantics { contentDescription = "${labels[index]} action" }
-                    .clickable(enabled = labels[index].isNotBlank()) { controller.pressSoftKey(index) },
+                    .semantics { contentDescription = "${actions[index].name} action" }
+                    .clickable(enabled = actions[index] != SoftAction.None) { controller.pressSoftAction(actions[index]) },
                 shape = RoundedCornerShape(99.dp),
                 color = FlipColors.KeyBottom,
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
@@ -612,7 +831,7 @@ private fun QuickActionBars(controller: LauncherController) {
 /** Draws the twelve visual keypad buttons. No tap or hardware-key behavior is attached yet. */
 @Composable
 private fun Keypad(controller: LauncherController, modifier: Modifier = Modifier) {
-    val keys = if (controller.state.keypadMode() == KeypadMode.Telephone) KeyLabels else NavigationKeyLabels
+    val keys = keypadLabels(controller.state)
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -633,8 +852,22 @@ private fun Keypad(controller: LauncherController, modifier: Modifier = Modifier
     }
 }
 
+/** Returns only the physical controls that have meaning in the current launcher mode. */
+private fun keypadLabels(state: LauncherUiState): List<KeyLabel> = when (state.screen) {
+    LauncherScreen.Home, LauncherScreen.Dialer -> KeyLabels
+    LauncherScreen.Search -> if (state.searchMode == SearchMode.Entry) KeyLabels else VerticalNavigationKeyLabels
+    LauncherScreen.QuickLaunch, LauncherScreen.Settings -> NavigationKeyLabels
+    LauncherScreen.FavoriteEditor -> when (state.editorMode) {
+        FavoriteEditorMode.Overview -> VerticalNavigationKeyLabels
+        FavoriteEditorMode.IconPicker, FavoriteEditorMode.Move -> NavigationKeyLabels
+        FavoriteEditorMode.DeleteConfirmation -> ConfirmationKeyLabels
+        FavoriteEditorMode.NameEditing, FavoriteEditorMode.AppPicker -> DisabledKeyLabels
+    }
+}
+
 /** Draws one visual key and its optional telephone-letter label. */
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun KeypadKey(key: KeyLabel, controller: LauncherController, modifier: Modifier = Modifier) {
     val enabled = key.primary.isNotBlank()
     val primaryWeight = if (key.primary in setOf("↑", "↓", "←", "→")) FontWeight.ExtraBold else FontWeight.Bold
@@ -642,7 +875,11 @@ private fun KeypadKey(key: KeyLabel, controller: LauncherController, modifier: M
         modifier = modifier
             .fillMaxSize()
             .semantics { contentDescription = if (enabled) "Key ${key.primary}" else "Inactive keypad key" }
-            .clickable(enabled = enabled) { controller.pressKey(key.primary) },
+            .combinedClickable(
+                enabled = enabled,
+                onClick = { controller.pressKey(key.primary) },
+                onLongClick = { controller.longPressKey(key.primary) },
+            ),
         shape = RoundedCornerShape(18.dp),
         color = Color.Transparent,
         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.09f)),
