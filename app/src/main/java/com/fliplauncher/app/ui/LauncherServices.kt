@@ -62,7 +62,7 @@ internal class DataStoreLauncherSettingsRepository(private val context: Context)
 
 /** Loads and saves the configurable Quick Launch slots. */
 internal interface FavoriteRepository {
-    /** Returns validated saved favorites, appending defaults for newly introduced slots. */
+    /** Returns validated saved favorites, using defaults only before any configuration exists. */
     suspend fun load(): List<QuickLaunchFavorite>
 
     /** Persists every favorite slot atomically. */
@@ -89,6 +89,9 @@ internal class DataStoreFavoriteRepository(private val context: Context) : Favor
     override suspend fun save(favorites: List<QuickLaunchFavorite>) {
         require(favorites.isNotEmpty()) { "Quick Launch requires at least one favorite." }
         context.favoriteDataStore.edit { preferences ->
+            preferences.asMap().keys
+                .mapNotNull { key -> key.name.favoriteIndexOrNull() }
+                .forEach { index -> preferences.remove(favoriteSlotKey(index)) }
             favorites.forEachIndexed { index, favorite -> preferences[favoriteSlotKey(index)] = favorite.serialize() }
         }
     }
@@ -225,11 +228,9 @@ private fun String.favoriteIndexOrNull(): Int? = takeIf { startsWith(FavoriteSlo
     ?.removePrefix(FavoriteSlotPrefix)
     ?.toIntOrNull()
 
-/** Appends new bundled examples so existing installs can exercise newly added grid pages. */
-private fun List<QuickLaunchFavorite>.withSeedFavorites(): List<QuickLaunchFavorite> {
-    if (isEmpty()) return FavoriteTargets.defaults()
-    return this + FavoriteTargets.defaults().drop(size)
-}
+/** Uses bundled examples only for a genuinely unconfigured installation. */
+internal fun List<QuickLaunchFavorite>.withSeedFavorites(): List<QuickLaunchFavorite> =
+    if (isEmpty()) FavoriteTargets.defaults() else this
 
 /** Serializes the simple favorite record without exposing platform objects to persistence. */
 private fun QuickLaunchFavorite.serialize(): String = listOf(

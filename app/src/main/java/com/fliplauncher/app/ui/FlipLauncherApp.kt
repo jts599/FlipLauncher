@@ -1,13 +1,24 @@
 package com.fliplauncher.app.ui
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.wifi.WifiManager
+import android.telephony.PhoneStateListener
+import android.telephony.SignalStrength
+import android.telephony.TelephonyManager
 import android.text.format.DateFormat
 import android.widget.ImageView
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -130,7 +141,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -301,6 +314,8 @@ private fun ScreenSurface(status: LauncherStatus, controller: LauncherController
                 .padding(start = 16.dp, top = 14.dp),
         )
         CellSignalReadout(
+            signalBars = status.signalBars,
+            networkType = status.networkType,
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(end = 16.dp, top = 14.dp),
@@ -310,17 +325,17 @@ private fun ScreenSurface(status: LauncherStatus, controller: LauncherController
     }
 }
 
-/** Renders a decorative cellular signal readout without querying device telephony services. */
+/** Renders the current cellular strength and radio technology in the LCD status row. */
 @Composable
-private fun CellSignalReadout(modifier: Modifier = Modifier) {
+private fun CellSignalReadout(signalBars: Int, networkType: String, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CellSignalBars()
+        CellSignalBars(signalBars)
         Text(
-            text = "LTE",
+            text = networkType,
             color = FlipColors.ScreenInk,
             fontSize = 9.sp,
             fontWeight = FontWeight.Bold,
@@ -375,17 +390,17 @@ private fun BatteryIcon() {
 
 /** Draws four stepped blocks to give the cellular signal meter a low-resolution LCD appearance. */
 @Composable
-private fun CellSignalBars() {
+private fun CellSignalBars(activeBarCount: Int) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
-        CellSignalBarHeights.forEach { barHeight ->
+        CellSignalBarHeights.forEachIndexed { index, barHeight ->
             Box(
                 modifier = Modifier
                     .width(4.dp)
                     .height(barHeight)
-                    .background(FlipColors.ScreenInk),
+                    .background(FlipColors.ScreenInk.copy(alpha = if (index < activeBarCount) 1f else 0.18f)),
             )
         }
     }
@@ -1015,6 +1030,7 @@ private fun softActions(state: LauncherUiState): List<SoftAction> = when {
 @Composable
 private fun QuickActionBars(controller: LauncherController) {
     val actions = softActions(controller.state)
+    val haptics = LocalHapticFeedback.current
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         listOf(FlipColors.Red, FlipColors.Yellow, FlipColors.Green).forEachIndexed { index, color ->
             Surface(
@@ -1022,7 +1038,10 @@ private fun QuickActionBars(controller: LauncherController) {
                     .weight(1f)
                     .height(46.dp)
                     .semantics { contentDescription = "${actions[index].name} action" }
-                    .clickable(enabled = actions[index] != SoftAction.None) { controller.pressSoftAction(actions[index]) },
+                    .clickable(enabled = actions[index] != SoftAction.None) {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        controller.pressSoftAction(actions[index])
+                    },
                 shape = RoundedCornerShape(99.dp),
                 color = FlipColors.KeyBottom,
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
@@ -1083,6 +1102,8 @@ private fun keypadLabels(state: LauncherUiState): List<KeyLabel> = when (state.s
 @OptIn(ExperimentalFoundationApi::class)
 private fun KeypadKey(key: KeyLabel, controller: LauncherController, modifier: Modifier = Modifier) {
     val enabled = key.primary.isNotBlank()
+    val haptics = LocalHapticFeedback.current
+    val supportsLongPress = key.primary == "OK" && controller.state.screen == LauncherScreen.QuickLaunch
     val primaryWeight = if (key.primary in setOf("↑", "↓", "←", "→")) FontWeight.ExtraBold else FontWeight.Bold
     Surface(
         modifier = modifier
@@ -1090,8 +1111,16 @@ private fun KeypadKey(key: KeyLabel, controller: LauncherController, modifier: M
             .semantics { contentDescription = if (enabled) "Key ${key.primary}" else "Inactive keypad key" }
             .combinedClickable(
                 enabled = enabled,
-                onClick = { controller.pressKey(key.primary) },
-                onLongClick = { controller.longPressKey(key.primary) },
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    controller.pressKey(key.primary)
+                },
+                onLongClick = if (supportsLongPress) {
+                    {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        controller.longPressKey(key.primary)
+                    }
+                } else null,
             ),
         shape = RoundedCornerShape(18.dp),
         color = Color.Transparent,
@@ -1135,12 +1164,19 @@ private fun KeypadKey(key: KeyLabel, controller: LauncherController, modifier: M
  * @property timeText Localized current time for the centered LCD readout.
  * @property dateText Localized current date shown beneath the centered time.
  * @property batteryText Formatted battery percentage, or an unknown-state label.
+ * @property signalBars Number of active cellular bars from zero through four.
+ * @property networkType Concise cellular radio label, or `--` when unavailable.
  */
 private data class LauncherStatus(
     val timeText: String,
     val dateText: String,
     val batteryText: String,
+    val signalBars: Int,
+    val networkType: String,
 )
+
+/** Holds cellular values supplied by Android telephony callbacks. */
+private data class CellularStatus(val signalBars: Int = 0, val networkType: String = "--")
 
 /** Observes the local clock and battery broadcasts while the launcher composition is visible. */
 @Composable
@@ -1149,6 +1185,9 @@ private fun rememberLauncherStatus(): LauncherStatus {
     var timeText by remember(context) { mutableStateOf(formattedTime(context)) }
     var dateText by remember(context) { mutableStateOf(formattedDate(context)) }
     var batteryText by remember { mutableStateOf("--%") }
+    val cellularStatus = rememberCellularStatus(context)
+    val wifiStatus = rememberWifiStatus(context)
+    val connectionStatus = if (wifiStatus.isConnected) wifiStatus.asCellularStatus() else cellularStatus
 
     LaunchedEffect(context) {
         while (true) {
@@ -1168,7 +1207,115 @@ private fun rememberLauncherStatus(): LauncherStatus {
         batteryText = intent?.batteryText() ?: batteryText
         onDispose { context.unregisterReceiver(receiver) }
     }
-    return LauncherStatus(timeText, dateText, batteryText)
+    return LauncherStatus(timeText, dateText, batteryText, connectionStatus.signalBars, connectionStatus.networkType)
+}
+
+/** Holds the active Wi-Fi state used to override cellular status when connected. */
+private data class WifiStatus(val isConnected: Boolean = false, val signalBars: Int = 0)
+
+/** Converts a connected Wi-Fi reading into the shared LCD connection representation. */
+private fun WifiStatus.asCellularStatus(): CellularStatus = CellularStatus(signalBars, "WI-FI")
+
+/** Observes the active default network and publishes Wi-Fi RSSI while it is connected. */
+@Composable
+private fun rememberWifiStatus(context: Context): WifiStatus {
+    var status by remember { mutableStateOf(WifiStatus()) }
+    DisposableEffect(context) {
+        val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
+        val wifiManager = context.applicationContext.getSystemService(WifiManager::class.java)
+        val publishCurrentStatus = {
+            val capabilities = connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)
+            status = capabilities.toWifiStatus(wifiManager)
+        }
+        val callback = wifiNetworkCallback(context, publishCurrentStatus)
+        connectivityManager.registerDefaultNetworkCallback(callback)
+        publishCurrentStatus()
+        onDispose { connectivityManager.unregisterNetworkCallback(callback) }
+    }
+    return status
+}
+
+/** Creates a default-network callback that safely returns updates to the main thread. */
+private fun wifiNetworkCallback(context: Context, publish: () -> Unit): ConnectivityManager.NetworkCallback =
+    object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) = context.mainExecutor.execute(publish)
+        override fun onLost(network: Network) = context.mainExecutor.execute(publish)
+        override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) =
+            context.mainExecutor.execute(publish)
+    }
+
+/** Returns a four-bar Wi-Fi reading when these capabilities represent active Wi-Fi. */
+@Suppress("DEPRECATION")
+private fun NetworkCapabilities?.toWifiStatus(wifiManager: WifiManager): WifiStatus {
+    if (this?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) != true) return WifiStatus()
+    val level = WifiManager.calculateSignalLevel(wifiManager.connectionInfo.rssi, CellSignalBarHeights.size + 1)
+    return WifiStatus(isConnected = true, signalBars = level.coerceIn(0, CellSignalBarHeights.size))
+}
+
+/** Requests phone-state access and observes signal changes while the launcher is visible. */
+@Composable
+private fun rememberCellularStatus(context: Context): CellularStatus {
+    var permissionGranted by remember(context) { mutableStateOf(context.hasPhoneStatePermission()) }
+    var status by remember { mutableStateOf(CellularStatus()) }
+    val permissionRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        permissionGranted = granted
+    }
+    LaunchedEffect(Unit) {
+        if (!permissionGranted) permissionRequest.launch(Manifest.permission.READ_PHONE_STATE)
+    }
+    DisposableEffect(context, permissionGranted) {
+        if (!permissionGranted) return@DisposableEffect onDispose {}
+        val telephonyManager = context.getSystemService(TelephonyManager::class.java)
+        val listener = cellularPhoneStateListener(telephonyManager) { status = it }
+        telephonyManager.listen(listener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS or PhoneStateListener.LISTEN_DATA_CONNECTION_STATE)
+        onDispose { telephonyManager.listen(listener, PhoneStateListener.LISTEN_NONE) }
+    }
+    return status
+}
+
+/** Returns whether the app may read cellular signal and network information. */
+private fun Context.hasPhoneStatePermission(): Boolean =
+    ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+
+/** Creates the legacy-compatible listener needed on the app's Android 10 minimum SDK. */
+@Suppress("DEPRECATION")
+private fun cellularPhoneStateListener(
+    telephonyManager: TelephonyManager,
+    onStatusChanged: (CellularStatus) -> Unit,
+): PhoneStateListener = object : PhoneStateListener() {
+    private var signalBars = 0
+
+    override fun onSignalStrengthsChanged(signalStrength: SignalStrength) {
+        signalBars = signalStrength.level.coerceIn(0, CellSignalBarHeights.size)
+        onStatusChanged(CellularStatus(signalBars, telephonyManager.safeNetworkType().networkLabel()))
+    }
+
+    override fun onDataConnectionStateChanged(state: Int, networkType: Int) {
+        onStatusChanged(CellularStatus(signalBars, networkType.networkLabel()))
+    }
+}
+
+/** Reads the current data radio type without allowing device-specific failures into the UI. */
+private fun TelephonyManager.safeNetworkType(): Int = try {
+    dataNetworkType
+} catch (_: SecurityException) {
+    TelephonyManager.NETWORK_TYPE_UNKNOWN
+}
+
+/** Converts Android radio constants into compact labels suitable for the LCD. */
+private fun Int.networkLabel(): String = when (this) {
+    TelephonyManager.NETWORK_TYPE_NR -> "5G"
+    TelephonyManager.NETWORK_TYPE_LTE -> "LTE"
+    TelephonyManager.NETWORK_TYPE_HSPAP -> "H+"
+    TelephonyManager.NETWORK_TYPE_HSDPA, TelephonyManager.NETWORK_TYPE_HSUPA, TelephonyManager.NETWORK_TYPE_HSPA -> "H"
+    TelephonyManager.NETWORK_TYPE_UMTS, TelephonyManager.NETWORK_TYPE_TD_SCDMA, TelephonyManager.NETWORK_TYPE_EVDO_0,
+    TelephonyManager.NETWORK_TYPE_EVDO_A, TelephonyManager.NETWORK_TYPE_EVDO_B, TelephonyManager.NETWORK_TYPE_EHRPD -> "3G"
+    TelephonyManager.NETWORK_TYPE_EDGE -> "EDGE"
+    TelephonyManager.NETWORK_TYPE_GPRS -> "GPRS"
+    TelephonyManager.NETWORK_TYPE_CDMA -> "CDMA"
+    TelephonyManager.NETWORK_TYPE_1xRTT -> "1X"
+    TelephonyManager.NETWORK_TYPE_GSM -> "GSM"
+    else -> "--"
 }
 
 /** Formats the current time using the user's Android 12/24-hour preference. */

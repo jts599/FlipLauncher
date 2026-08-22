@@ -15,6 +15,16 @@ class LauncherNavigationTest {
         assertEquals(true, FavoriteIcon.values().contains(FavoriteIcon.Bird))
     }
 
+    /** Confirms loading never appends defaults over a deliberately shortened configuration. */
+    @Test
+    fun configuredFavoritesAreNotReseeded() {
+        val configured = FavoriteTargets.defaults().take(4).reversed()
+
+        val loaded = configured.withSeedFavorites()
+
+        assertEquals(configured, loaded)
+    }
+
     /** Confirms the Search backspace action removes one digit instead of clearing the query. */
     @Test
     fun searchBackspaceRemovesOneDigit() {

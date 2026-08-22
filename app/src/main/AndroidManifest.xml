@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Declares FlipLauncher as a selectable Android Home application. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Allows the LCD status area to observe cellular signal strength and radio technology. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
     <!-- Makes installed launcher activities visible for FlipLauncher's searchable catalog. -->
     <queries>
         <intent>
