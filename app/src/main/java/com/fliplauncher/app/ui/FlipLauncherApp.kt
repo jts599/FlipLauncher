@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -347,7 +348,7 @@ private fun CellSignalReadout(signalBars: Int, networkType: String, modifier: Mo
 @Composable
 private fun BatteryReadout(batteryText: String, modifier: Modifier = Modifier) {
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        BatteryIcon()
+        BatteryIcon(batteryFillFraction(batteryText))
         Spacer(Modifier.width(5.dp))
         Text(
             text = batteryText,
@@ -359,9 +360,13 @@ private fun BatteryReadout(batteryText: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** Draws the static battery silhouette used beside the live charge percentage. */
+/**
+ * Draws a battery silhouette whose fill reflects the live charge percentage.
+ *
+ * @param fillFraction Battery fill from zero through one. Values originate from [batteryFillFraction].
+ */
 @Composable
-private fun BatteryIcon() {
+private fun BatteryIcon(fillFraction: Float) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Surface(
             modifier = Modifier
@@ -375,8 +380,14 @@ private fun BatteryIcon() {
                 modifier = Modifier
                     .padding(2.dp)
                     .fillMaxSize()
-                    .background(FlipColors.ScreenInk),
-            )
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(fillFraction)
+                        .background(FlipColors.ScreenInk),
+                )
+            }
         }
         Box(
             modifier = Modifier
@@ -386,6 +397,15 @@ private fun BatteryIcon() {
         )
     }
 }
+
+/**
+ * Converts the displayed battery percentage into a clamped icon fill fraction.
+ *
+ * @param batteryText Percentage text ending in `%`, or an unknown-state label.
+ * @return A value from zero through one; malformed text produces an empty fill.
+ */
+internal fun batteryFillFraction(batteryText: String): Float =
+    batteryText.removeSuffix("%").toIntOrNull()?.coerceIn(0, 100)?.div(100f) ?: 0f
 
 /** Draws four stepped blocks to give the cellular signal meter a low-resolution LCD appearance. */
 @Composable
