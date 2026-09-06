@@ -999,7 +999,7 @@ private fun softActions(state: LauncherUiState): List<SoftAction> = when {
         LauncherScreen.QuickLaunch -> listOf(SoftAction.Edit, SoftAction.Add, SoftAction.Home)
         LauncherScreen.Settings -> listOf(SoftAction.None, SoftAction.None, SoftAction.Home)
         LauncherScreen.FavoriteEditor -> listOf(SoftAction.Save, SoftAction.Delete, SoftAction.Cancel)
-        LauncherScreen.Dialer -> listOf(SoftAction.Delete, SoftAction.Text, SoftAction.Call)
+        LauncherScreen.Dialer -> listOf(SoftAction.Backspace, SoftAction.Text, SoftAction.Call)
     }
 }
 

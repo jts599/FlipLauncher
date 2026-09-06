@@ -82,7 +82,8 @@ internal class LauncherController(
         SoftAction.Settings -> state = state.copy(screen = LauncherScreen.Settings, message = null)
         SoftAction.Backspace -> {
             lastMultiPressKey = null
-            state = reduceBackspace(state).copy(message = null)
+            if (state.screen == LauncherScreen.Dialer) deleteDialedCharacter()
+            else state = reduceBackspace(state).copy(message = null)
         }
         SoftAction.ToggleSearchMode -> state = state.copy(searchMode = state.searchMode.toggle(), selectedSearchIndex = 0)
         SoftAction.Home -> goHome()
