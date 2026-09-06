@@ -706,17 +706,46 @@ private fun FavoriteIconPickerLcdContent(state: LauncherUiState, modifier: Modif
     val pageIndex = state.selectedFavoriteIconIndex / FavoriteIconPageSize
     val firstIconIndex = pageIndex * FavoriteIconPageSize
     Box(modifier.fillMaxWidth()) {
-        Column(Modifier.fillMaxWidth().padding(end = 9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            icons.drop(firstIconIndex).take(FavoriteIconPageSize).chunked(QuickLaunchColumnCount).forEachIndexed { rowIndex, row ->
-                Row(Modifier.fillMaxWidth()) {
-                    row.forEachIndexed { columnIndex, icon ->
-                        val iconIndex = firstIconIndex + rowIndex * QuickLaunchColumnCount + columnIndex
-                        IconPickerCell(icon, iconIndex == state.selectedFavoriteIconIndex, Modifier.weight(1f))
+        FavoriteIconPickerGrid(
+            icons = icons.drop(firstIconIndex).take(FavoriteIconPageSize),
+            firstIconIndex = firstIconIndex,
+            selectedIconIndex = state.selectedFavoriteIconIndex,
+            modifier = Modifier.fillMaxWidth().padding(end = 9.dp),
+        )
+        PageIndicator(pageIndex, itemPageCount(icons.size, FavoriteIconPageSize), Modifier.align(Alignment.CenterEnd))
+    }
+}
+
+/**
+ * Draws icon-picker rows with fixed-width slots, including blank trailing slots on incomplete rows.
+ *
+ * @param icons Icons displayed in this page of the picker.
+ * @param firstIconIndex Zero-based index of [icons]' first item in the complete icon library.
+ * @param selectedIconIndex Zero-based focused item index in the complete icon library.
+ * @param modifier Optional placement constraints for the grid.
+ * @return Unit. Emits Compose UI only; no external effects or expected errors.
+ */
+@Composable
+internal fun FavoriteIconPickerGrid(
+    icons: List<FavoriteIcon>,
+    firstIconIndex: Int,
+    selectedIconIndex: Int,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        icons.chunked(QuickLaunchColumnCount).forEachIndexed { rowIndex, row ->
+            Row(Modifier.fillMaxWidth()) {
+                repeat(QuickLaunchColumnCount) { columnIndex ->
+                    val icon = row.getOrNull(columnIndex)
+                    if (icon == null) {
+                        Spacer(Modifier.weight(1f))
+                        return@repeat
                     }
+                    val iconIndex = firstIconIndex + rowIndex * QuickLaunchColumnCount + columnIndex
+                    IconPickerCell(icon, iconIndex == selectedIconIndex, Modifier.weight(1f))
                 }
             }
         }
-        PageIndicator(pageIndex, itemPageCount(icons.size, FavoriteIconPageSize), Modifier.align(Alignment.CenterEnd))
     }
 }
 
@@ -725,6 +754,7 @@ private fun FavoriteIconPickerLcdContent(state: LauncherUiState, modifier: Modif
 private fun IconPickerCell(icon: FavoriteIcon, selected: Boolean, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier.height(40.dp).padding(horizontal = 4.dp)
+            .semantics { contentDescription = "${icon.name} icon" }
             .then(if (selected) Modifier.border(1.dp, FlipColors.ScreenInk, RoundedCornerShape(4.dp)) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
