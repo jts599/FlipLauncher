@@ -115,9 +115,9 @@ class LauncherNavigationTest {
         assertEquals(2, result.selectedFavoriteIndex)
     }
 
-    /** Confirms touch-first shortcuts page vertically without selecting individual grid entries. */
+    /** Confirms touch-mode page keys preserve focus while directional keys still navigate the grid. */
     @Test
-    fun touchShortcutsNavigateBetweenWholePages() {
+    fun touchShortcutsSupportFocusedGridNavigationAndPaging() {
         val favorites = FavoriteTargets.defaults()
         val state = LauncherUiState(
             screen = LauncherScreen.QuickLaunch,
@@ -125,13 +125,27 @@ class LauncherNavigationTest {
             settings = LauncherSettings(touchToLaunchShortcuts = true),
         )
 
-        val nextPage = reduceNavigation(state, NavigationDirection.Down, favorites)
-        val previousPage = reduceNavigation(nextPage, NavigationDirection.Up, favorites)
-        val ignoredHorizontalInput = reduceNavigation(nextPage, NavigationDirection.Right, favorites)
+        val nextGridRow = reduceNavigation(state, NavigationDirection.Down, favorites)
+        val nextPage = moveFavoritePageIndex(state.selectedFavoriteIndex, NavigationDirection.Down, favorites.size)
+        val previousPage = moveFavoritePageIndex(nextPage, NavigationDirection.Up, favorites.size)
 
-        assertEquals(QuickLaunchPageSize, nextPage.selectedFavoriteIndex)
-        assertEquals(0, previousPage.selectedFavoriteIndex)
-        assertEquals(QuickLaunchPageSize, ignoredHorizontalInput.selectedFavoriteIndex)
+        assertEquals(5, nextGridRow.selectedFavoriteIndex)
+        assertEquals(QuickLaunchPageSize + 2, nextPage)
+        assertEquals(2, previousPage)
+    }
+
+    /** Confirms dedicated page labels are handled only after touch-mode Quick Launch is enabled. */
+    @Test
+    fun touchShortcutsUseDedicatedPageKeys() {
+        val controller = controller()
+        controller.pressSoftAction(SoftAction.Settings)
+        controller.pressKey("↓")
+        controller.pressKey("OK")
+        controller.pressSoftAction(SoftAction.Quick)
+
+        controller.pressKey("PG↓")
+
+        assertEquals(QuickLaunchPageSize, controller.state.selectedFavoriteIndex)
     }
 
     /** Confirms Back from name entry restores the value present before the keyboard opened. */

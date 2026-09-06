@@ -58,6 +58,7 @@ internal class LauncherController(
             return
         }
         if (state.screen == LauncherScreen.FavoriteEditor && state.editorMode in setOf(FavoriteEditorMode.NameEditing, FavoriteEditorMode.AppPicker)) return
+        if (pressQuickLaunchPageKey(key)) return
         val direction = key.directionOrNull()
         if (state.screen == LauncherScreen.FavoriteEditor && state.editorMode == FavoriteEditorMode.Move && direction != null) {
             moveFavorite(direction)
@@ -65,6 +66,21 @@ internal class LauncherController(
         }
         if (direction != null) state = reduceNavigation(state, direction, favorites).clampSearchIndex(filteredApps())
         if (key == "OK") selectFocusedItem()
+    }
+
+    /**
+     * Applies a dedicated page key when touch-mode Quick Launch displays it.
+     *
+     * @param key Visible keypad label pressed by the user.
+     * @return True when the key was a Quick Launch page command; false leaves normal key handling active.
+     * @throws None.
+     * @sideEffects Updates the selected favorite index in memory only.
+     */
+    private fun pressQuickLaunchPageKey(key: String): Boolean {
+        if (state.screen != LauncherScreen.QuickLaunch || !state.settings.touchToLaunchShortcuts) return false
+        val direction = key.quickLaunchPageDirectionOrNull() ?: return false
+        state = state.copy(selectedFavoriteIndex = moveFavoritePageIndex(state.selectedFavoriteIndex, direction, favorites.size))
+        return true
     }
 
     /** Enters shortcut reordering when OK is held on the Quick Launch grid. */
@@ -390,6 +406,13 @@ private fun String.directionOrNull(): NavigationDirection? = when (this) {
     "↓" -> NavigationDirection.Down
     "←" -> NavigationDirection.Left
     "→" -> NavigationDirection.Right
+    else -> null
+}
+
+/** Maps a dedicated Quick Launch page key to its vertical page direction. */
+private fun String.quickLaunchPageDirectionOrNull(): NavigationDirection? = when (this) {
+    "PG↑" -> NavigationDirection.Up
+    "PG↓" -> NavigationDirection.Down
     else -> null
 }
 

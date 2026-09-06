@@ -186,10 +186,10 @@ private val VerticalNavigationKeyLabels = listOf(
     KeyLabel(""), KeyLabel("↓"), KeyLabel(""),
     KeyLabel(""), KeyLabel(""), KeyLabel(""),
 )
-private val PagingNavigationKeyLabels = listOf(
-    KeyLabel(""), KeyLabel("↑"), KeyLabel(""),
-    KeyLabel(""), KeyLabel(""), KeyLabel(""),
-    KeyLabel(""), KeyLabel("↓"), KeyLabel(""),
+private val TouchQuickLaunchKeyLabels = listOf(
+    KeyLabel(""), KeyLabel("↑"), KeyLabel("PG↑"),
+    KeyLabel("←"), KeyLabel("OK"), KeyLabel("→"),
+    KeyLabel(""), KeyLabel("↓"), KeyLabel("PG↓"),
     KeyLabel(""), KeyLabel(""), KeyLabel(""),
 )
 private val DisabledKeyLabels = List(12) { KeyLabel("") }
@@ -585,7 +585,7 @@ private fun SearchEmptyState(modifier: Modifier = Modifier) {
 /**
  * Renders the Quick Launch grid as large, centered app icons with compact labels.
  *
- * @param state Current launcher state; its selected favorite determines the page and receives focus outside touch mode.
+ * @param state Current launcher state; its selected favorite determines the page and receives focus treatment.
  * @param favorites Configured Quick Launch entries, displayed in a two-column grid.
  * @param modifier Layout constraints supplied by the LCD container.
  */
@@ -613,8 +613,7 @@ private fun QuickLaunchLcdContent(
                         } else {
                             FavoriteLcdTile(
                                 favorite = favorite,
-                                focused = !state.settings.touchToLaunchShortcuts &&
-                                    firstItemIndex + rowIndex * QuickLaunchColumnCount + columnIndex == state.selectedFavoriteIndex,
+                                focused = firstItemIndex + rowIndex * QuickLaunchColumnCount + columnIndex == state.selectedFavoriteIndex,
                                 modifier = Modifier.weight(1f),
                                 onClick = { onFavoriteTap(firstItemIndex + rowIndex * QuickLaunchColumnCount + columnIndex) },
                                 touchEnabled = state.settings.touchToLaunchShortcuts,
@@ -1151,13 +1150,13 @@ private fun Keypad(controller: LauncherController, modifier: Modifier = Modifier
 /**
  * Returns only the physical controls that have meaning in the current launcher mode.
  *
- * Touch-mode Quick Launch exposes only vertical page navigation because touch performs launching
- * and individual icon focus is intentionally disabled (issue #7).
+ * Touch-mode Quick Launch retains icon navigation and adds dedicated page keys beside the vertical
+ * arrows so users can page without losing the focused icon required for editing (issue #7).
  */
 private fun keypadLabels(state: LauncherUiState): List<KeyLabel> = when (state.screen) {
     LauncherScreen.Home, LauncherScreen.Dialer -> KeyLabels
     LauncherScreen.Search -> if (state.searchMode == SearchMode.Entry) KeyLabels else VerticalNavigationKeyLabels
-    LauncherScreen.QuickLaunch -> if (state.settings.touchToLaunchShortcuts) PagingNavigationKeyLabels else NavigationKeyLabels
+    LauncherScreen.QuickLaunch -> if (state.settings.touchToLaunchShortcuts) TouchQuickLaunchKeyLabels else NavigationKeyLabels
     LauncherScreen.Settings -> NavigationKeyLabels
     LauncherScreen.FavoriteEditor -> when (state.editorMode) {
         FavoriteEditorMode.Overview -> VerticalNavigationKeyLabels
@@ -1174,7 +1173,9 @@ private fun KeypadKey(key: KeyLabel, controller: LauncherController, modifier: M
     val enabled = key.primary.isNotBlank()
     val haptics = LocalHapticFeedback.current
     val supportsLongPress = key.primary == "OK" && controller.state.screen == LauncherScreen.QuickLaunch
-    val primaryWeight = if (key.primary in setOf("↑", "↓", "←", "→")) FontWeight.ExtraBold else FontWeight.Bold
+    val isPageKey = key.primary in setOf("PG↑", "PG↓")
+    val primaryWeight = if (key.primary in setOf("↑", "↓", "←", "→") || isPageKey) FontWeight.ExtraBold else FontWeight.Bold
+    val primarySize = if (isPageKey) 16.sp else 28.sp
     Surface(
         modifier = modifier
             .fillMaxSize()
@@ -1206,7 +1207,7 @@ private fun KeypadKey(key: KeyLabel, controller: LauncherController, modifier: M
                 text = key.primary,
                 modifier = Modifier.align(Alignment.Center),
                 color = FlipColors.KeyText,
-                fontSize = 28.sp,
+                fontSize = primarySize,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = primaryWeight,
                 textAlign = TextAlign.Center,
