@@ -1,8 +1,6 @@
 /** Provides pure state transitions for FlipLauncher's keypad-driven navigation. */
 package com.fliplauncher.app.ui
 
-private const val QuickLaunchColumnCount = 3
-
 /** Identifies directional input from the navigation keypad. */
 internal enum class NavigationDirection { Up, Down, Left, Right }
 
@@ -30,10 +28,10 @@ internal fun reduceNavigation(
     LauncherScreen.Search -> reduceSearchNavigation(state, direction)
     LauncherScreen.QuickLaunch -> state.copy(
         selectedFavoriteIndex = moveGridIndex(
-            index = state.selectedFavoriteIndex,
-            direction = direction,
-            itemCount = favorites.size,
-            columnCount = QuickLaunchColumnCount,
+            state.selectedFavoriteIndex,
+            direction,
+            favorites.size,
+            QuickLaunchColumnCount,
         ),
     )
     LauncherScreen.Settings -> state.copy(selectedSettingIndex = moveSettingIndex(state.selectedSettingIndex, direction))
@@ -81,6 +79,30 @@ private fun reduceSearchNavigation(state: LauncherUiState, direction: Navigation
         NavigationDirection.Left, NavigationDirection.Right -> 0
     }
     return state.copy(selectedSearchIndex = (state.selectedSearchIndex + offset).coerceAtLeast(0))
+}
+
+/**
+ * Moves between whole Quick Launch pages while preserving the focused cell's position.
+ *
+ * @param selectedIndex Current selected favorite index.
+ * @param direction Keypad direction; Down advances a page, Up returns a page, and horizontal input is ignored.
+ * @param favoriteCount Number of configured favorites; zero produces index zero.
+ * @return The corresponding favorite index on the requested page, clamped on incomplete final pages.
+ * @throws None.
+ * @sideEffects None.
+ */
+internal fun moveFavoritePageIndex(selectedIndex: Int, direction: NavigationDirection, favoriteCount: Int): Int {
+    if (favoriteCount == 0) return 0
+    val pageCount = (favoriteCount + QuickLaunchPageSize - 1) / QuickLaunchPageSize
+    val normalizedIndex = selectedIndex.coerceIn(0, favoriteCount - 1)
+    val currentPage = normalizedIndex / QuickLaunchPageSize
+    val targetPage = when (direction) {
+        NavigationDirection.Up -> (currentPage - 1).coerceAtLeast(0)
+        NavigationDirection.Down -> (currentPage + 1).coerceAtMost(pageCount - 1)
+        NavigationDirection.Left, NavigationDirection.Right -> currentPage
+    }
+    val positionInPage = normalizedIndex % QuickLaunchPageSize
+    return (targetPage * QuickLaunchPageSize + positionInPage).coerceAtMost(favoriteCount - 1)
 }
 
 /** Moves focus through the three vertically arranged setting rows. */

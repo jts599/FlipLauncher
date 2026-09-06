@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -38,7 +39,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.ModalBottomSheet
@@ -164,10 +164,9 @@ import java.util.Date
 
 private const val MillisPerMinute = 60_000L
 private const val UnknownBatteryLevel = -1
-private const val QuickLaunchColumnCount = 3
-private const val QuickLaunchPageSize = 6
 private const val SearchResultWindowSize = 4
 private const val FavoriteIconPageSize = 12
+private val ScreenActionHeight = 42.dp
 private val CellSignalBarHeights = listOf(6.dp, 10.dp, 14.dp, 18.dp)
 private val KeyLabels = listOf(
     KeyLabel("1"), KeyLabel("2", "ABC"), KeyLabel("3", "DEF"),
@@ -185,6 +184,12 @@ private val VerticalNavigationKeyLabels = listOf(
     KeyLabel(""), KeyLabel("↑"), KeyLabel(""),
     KeyLabel(""), KeyLabel("OK"), KeyLabel(""),
     KeyLabel(""), KeyLabel("↓"), KeyLabel(""),
+    KeyLabel(""), KeyLabel(""), KeyLabel(""),
+)
+private val TouchQuickLaunchKeyLabels = listOf(
+    KeyLabel(""), KeyLabel("↑"), KeyLabel("PG↑"),
+    KeyLabel("←"), KeyLabel("OK"), KeyLabel("→"),
+    KeyLabel(""), KeyLabel("↓"), KeyLabel("PG↓"),
     KeyLabel(""), KeyLabel(""), KeyLabel(""),
 )
 private val DisabledKeyLabels = List(12) { KeyLabel("") }
@@ -298,7 +303,7 @@ private fun DisplayPanel(status: LauncherStatus, controller: LauncherController,
     }
 }
 
-/** Draws the LCD texture, status values, and inactive screen-action glyphs. */
+/** Draws the LCD texture, status values, and soft-key glyphs in separate, non-overlapping regions. */
 @Composable
 private fun ScreenSurface(status: LauncherStatus, controller: LauncherController) {
     Box(
@@ -320,7 +325,15 @@ private fun ScreenSurface(status: LauncherStatus, controller: LauncherController
                 .align(Alignment.TopEnd)
                 .padding(end = 16.dp, top = 14.dp),
         )
-        LauncherLcdContent(status, controller, Modifier.align(Alignment.Center).padding(horizontal = 14.dp, vertical = 38.dp))
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxSize()
+                .padding(start = 14.dp, top = 38.dp, end = 14.dp, bottom = ScreenActionHeight),
+            contentAlignment = Alignment.Center,
+        ) {
+            LauncherLcdContent(status, controller, Modifier)
+        }
         ScreenActions(softActions(controller.state), controller.state, modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
@@ -348,7 +361,7 @@ private fun CellSignalReadout(signalBars: Int, networkType: String, modifier: Mo
 @Composable
 private fun BatteryReadout(batteryText: String, modifier: Modifier = Modifier) {
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        BatteryIcon()
+        BatteryIcon(batteryFillFraction(batteryText))
         Spacer(Modifier.width(5.dp))
         Text(
             text = batteryText,
@@ -360,9 +373,13 @@ private fun BatteryReadout(batteryText: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** Draws the static battery silhouette used beside the live charge percentage. */
+/**
+ * Draws a battery silhouette whose fill reflects the live charge percentage.
+ *
+ * @param fillFraction Battery fill from zero through one. Values originate from [batteryFillFraction].
+ */
 @Composable
-private fun BatteryIcon() {
+private fun BatteryIcon(fillFraction: Float) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Surface(
             modifier = Modifier
@@ -376,8 +393,14 @@ private fun BatteryIcon() {
                 modifier = Modifier
                     .padding(2.dp)
                     .fillMaxSize()
-                    .background(FlipColors.ScreenInk),
-            )
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(fillFraction)
+                        .background(FlipColors.ScreenInk),
+                )
+            }
         }
         Box(
             modifier = Modifier
@@ -387,6 +410,15 @@ private fun BatteryIcon() {
         )
     }
 }
+
+/**
+ * Converts the displayed battery percentage into a clamped icon fill fraction.
+ *
+ * @param batteryText Percentage text ending in `%`, or an unknown-state label.
+ * @return A value from zero through one; malformed text produces an empty fill.
+ */
+internal fun batteryFillFraction(batteryText: String): Float =
+    batteryText.removeSuffix("%").toIntOrNull()?.coerceIn(0, 100)?.div(100f) ?: 0f
 
 /** Draws four stepped blocks to give the cellular signal meter a low-resolution LCD appearance. */
 @Composable
@@ -440,6 +472,7 @@ private fun HomeLcdContent(status: LauncherStatus, message: String?, modifier: M
 @Composable
 private fun SearchLcdContent(state: LauncherUiState, apps: List<LaunchableApp>, modifier: Modifier) {
     val firstVisibleIndex = searchResultWindowStart(state.selectedSearchIndex, state.searchMode)
+    val visibleApps = apps.drop(firstVisibleIndex).take(SearchResultWindowSize)
     Box(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier.fillMaxSize().padding(end = 11.dp),
@@ -447,16 +480,26 @@ private fun SearchLcdContent(state: LauncherUiState, apps: List<LaunchableApp>, 
             horizontalAlignment = Alignment.Start,
         ) {
             SearchField(state.searchDigits, state.settings.searchKeyboardFormat)
-            apps.drop(firstVisibleIndex).take(SearchResultWindowSize).forEachIndexed { index, app ->
-                SearchResultRow(
-                    label = app.label,
-                    focused = state.searchMode == SearchMode.Results && firstVisibleIndex + index == state.selectedSearchIndex,
-                )
+            if (visibleApps.isEmpty()) {
+                SearchEmptyState(Modifier.weight(1f))
+                repeat(SearchResultWindowSize - 1) { Spacer(Modifier.weight(1f)) }
+            } else {
+                repeat(SearchResultWindowSize) { index ->
+                    val app = visibleApps.getOrNull(index)
+                    if (app == null) {
+                        Spacer(Modifier.weight(1f))
+                        return@repeat
+                    }
+                    SearchResultRow(
+                        label = app.label,
+                        focused = state.searchMode == SearchMode.Results && firstVisibleIndex + index == state.selectedSearchIndex,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
-            if (apps.isEmpty()) SearchEmptyState()
             state.message?.let { LcdMessage(it) }
         }
-        QuickLaunchPageIndicator(
+        PageIndicator(
             pageIndex = firstVisibleIndex / SearchResultWindowSize,
             pageCount = itemPageCount(apps.size, SearchResultWindowSize),
             modifier = Modifier.align(Alignment.CenterEnd),
@@ -495,15 +538,22 @@ private fun SearchField(query: String, format: SearchKeyboardFormat) {
     }
 }
 
-/** Draws one fixed-height search result with an inverse LCD treatment when focused. */
+/**
+ * Draws one search result at the height allocated by its paged result slot.
+ *
+ * @param label Result label displayed to the user.
+ * @param focused Whether keypad navigation currently targets this result.
+ * @param modifier Layout constraints from the fixed four-row search result area.
+ * @return Unit. Emits Compose UI only; no external effects or expected errors.
+ */
 @Composable
-private fun SearchResultRow(label: String, focused: Boolean) {
+private fun SearchResultRow(label: String, focused: Boolean, modifier: Modifier = Modifier) {
     val background = if (focused) FlipColors.ScreenInk else Color.Transparent
     val foreground = if (focused) FlipColors.ScreenTop else FlipColors.ScreenInk
     Row(
         modifier = Modifier
+            .then(modifier)
             .fillMaxWidth()
-            .height(27.dp)
             .background(background, RoundedCornerShape(2.dp))
             .padding(horizontal = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -514,12 +564,17 @@ private fun SearchResultRow(label: String, focused: Boolean) {
     }
 }
 
-/** Displays concise feedback below the search field when the current query has no matches. */
+/**
+ * Displays concise feedback in an empty search result area.
+ *
+ * @param modifier Layout constraints supplied by the first reserved search result slot.
+ * @return Unit. Emits Compose UI only; no external effects or expected errors.
+ */
 @Composable
-private fun SearchEmptyState() {
+private fun SearchEmptyState(modifier: Modifier = Modifier) {
     Text(
         text = "NO APPS FOUND",
-        modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
+        modifier = modifier.padding(horizontal = 7.dp, vertical = 6.dp),
         color = FlipColors.ScreenInk.copy(alpha = 0.68f),
         fontSize = 10.sp,
         fontWeight = FontWeight.Bold,
@@ -530,7 +585,7 @@ private fun SearchEmptyState() {
 /**
  * Renders the Quick Launch grid as large, centered app icons with compact labels.
  *
- * @param state Current launcher state; its selected favorite index receives the focus treatment.
+ * @param state Current launcher state; its selected favorite determines the page and receives focus treatment.
  * @param favorites Configured Quick Launch entries, displayed in a two-column grid.
  * @param modifier Layout constraints supplied by the LCD container.
  */
@@ -569,7 +624,7 @@ private fun QuickLaunchLcdContent(
             }
             state.message?.let { LcdMessage(it) }
         }
-        QuickLaunchPageIndicator(
+        PageIndicator(
             pageIndex = pageIndex,
             pageCount = pageCount,
             modifier = Modifier.align(Alignment.CenterEnd),
@@ -582,28 +637,6 @@ private fun List<QuickLaunchFavorite>.pageCount(): Int = (size + QuickLaunchPage
 
 /** Returns the number of fixed-size pages needed to display an item count. */
 private fun itemPageCount(itemCount: Int, pageSize: Int): Int = (itemCount + pageSize - 1) / pageSize
-
-/**
- * Draws a compact page indicator only when the favorite grid overflows one LCD page.
- *
- * @param pageIndex Zero-based page containing the selected favorite.
- * @param pageCount Number of available pages; one or fewer hides the indicator.
- * @param modifier Positions the dot rail alongside the app grid.
- */
-@Composable
-private fun QuickLaunchPageIndicator(pageIndex: Int, pageCount: Int, modifier: Modifier = Modifier) {
-    if (pageCount <= 1) return
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        repeat(pageCount) { index ->
-            Box(
-                modifier = Modifier
-                    .size(5.dp)
-                    .clip(CircleShape)
-                    .background(FlipColors.ScreenInk.copy(alpha = if (index == pageIndex) 1f else 0.35f)),
-            )
-        }
-    }
-}
 
 /** Renders the two launcher-wide preferences as bold keypad-focused rows. */
 @Composable
@@ -708,18 +741,47 @@ private fun FavoriteIconPickerLcdContent(state: LauncherUiState, modifier: Modif
     val icons = FavoriteIcon.values().toList()
     val pageIndex = state.selectedFavoriteIconIndex / FavoriteIconPageSize
     val firstIconIndex = pageIndex * FavoriteIconPageSize
-    Box(modifier.fillMaxWidth()) {
-        Column(Modifier.fillMaxWidth().padding(end = 9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            icons.drop(firstIconIndex).take(FavoriteIconPageSize).chunked(QuickLaunchColumnCount).forEachIndexed { rowIndex, row ->
-                Row(Modifier.fillMaxWidth()) {
-                    row.forEachIndexed { columnIndex, icon ->
-                        val iconIndex = firstIconIndex + rowIndex * QuickLaunchColumnCount + columnIndex
-                        IconPickerCell(icon, iconIndex == state.selectedFavoriteIconIndex, Modifier.weight(1f))
+    Box(modifier.fillMaxSize()) {
+        FavoriteIconPickerGrid(
+            icons = icons.drop(firstIconIndex).take(FavoriteIconPageSize),
+            firstIconIndex = firstIconIndex,
+            selectedIconIndex = state.selectedFavoriteIconIndex,
+            modifier = Modifier.fillMaxWidth().padding(end = 9.dp),
+        )
+        PageIndicator(pageIndex, itemPageCount(icons.size, FavoriteIconPageSize), Modifier.align(Alignment.CenterEnd))
+    }
+}
+
+/**
+ * Draws icon-picker rows with fixed-width slots, including blank trailing slots on incomplete rows.
+ *
+ * @param icons Icons displayed in this page of the picker.
+ * @param firstIconIndex Zero-based index of [icons]' first item in the complete icon library.
+ * @param selectedIconIndex Zero-based focused item index in the complete icon library.
+ * @param modifier Optional placement constraints for the grid.
+ * @return Unit. Emits Compose UI only; no external effects or expected errors.
+ */
+@Composable
+internal fun FavoriteIconPickerGrid(
+    icons: List<FavoriteIcon>,
+    firstIconIndex: Int,
+    selectedIconIndex: Int,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        icons.chunked(QuickLaunchColumnCount).forEachIndexed { rowIndex, row ->
+            Row(Modifier.fillMaxWidth().weight(1f)) {
+                repeat(QuickLaunchColumnCount) { columnIndex ->
+                    val icon = row.getOrNull(columnIndex)
+                    if (icon == null) {
+                        Spacer(Modifier.weight(1f))
+                        return@repeat
                     }
+                    val iconIndex = firstIconIndex + rowIndex * QuickLaunchColumnCount + columnIndex
+                    IconPickerCell(icon, iconIndex == selectedIconIndex, Modifier.weight(1f))
                 }
             }
         }
-        QuickLaunchPageIndicator(pageIndex, itemPageCount(icons.size, FavoriteIconPageSize), Modifier.align(Alignment.CenterEnd))
     }
 }
 
@@ -727,7 +789,8 @@ private fun FavoriteIconPickerLcdContent(state: LauncherUiState, modifier: Modif
 @Composable
 private fun IconPickerCell(icon: FavoriteIcon, selected: Boolean, modifier: Modifier = Modifier) {
     Box(
-        modifier = modifier.height(40.dp).padding(horizontal = 4.dp)
+        modifier = modifier.fillMaxHeight().padding(horizontal = 4.dp)
+            .semantics { contentDescription = "${icon.name} icon" }
             .then(if (selected) Modifier.border(1.dp, FlipColors.ScreenInk, RoundedCornerShape(4.dp)) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
@@ -756,7 +819,7 @@ private fun FavoriteMoveLcdContent(state: LauncherUiState, favorites: List<Quick
             }
             LcdMessage("ARROWS TO MOVE")
         }
-        QuickLaunchPageIndicator(pageIndex, favorites.pageCount(), Modifier.align(Alignment.CenterEnd))
+        PageIndicator(pageIndex, favorites.pageCount(), Modifier.align(Alignment.CenterEnd))
     }
 }
 
@@ -955,7 +1018,7 @@ private fun ScreenActions(actions: List<SoftAction>, state: LauncherUiState, mod
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(42.dp)
+            .height(ScreenActionHeight)
             .topBorder(FlipColors.ScreenInk.copy(alpha = 0.38f)),
     ) {
         actions.forEachIndexed { index, action ->
@@ -1022,7 +1085,7 @@ private fun softActions(state: LauncherUiState): List<SoftAction> = when {
         LauncherScreen.QuickLaunch -> listOf(SoftAction.Edit, SoftAction.Add, SoftAction.Home)
         LauncherScreen.Settings -> listOf(SoftAction.None, SoftAction.None, SoftAction.Home)
         LauncherScreen.FavoriteEditor -> listOf(SoftAction.Save, SoftAction.Delete, SoftAction.Cancel)
-        LauncherScreen.Dialer -> listOf(SoftAction.Delete, SoftAction.Text, SoftAction.Call)
+        LauncherScreen.Dialer -> listOf(SoftAction.Backspace, SoftAction.Text, SoftAction.Call)
     }
 }
 
@@ -1084,11 +1147,17 @@ private fun Keypad(controller: LauncherController, modifier: Modifier = Modifier
     }
 }
 
-/** Returns only the physical controls that have meaning in the current launcher mode. */
+/**
+ * Returns only the physical controls that have meaning in the current launcher mode.
+ *
+ * Touch-mode Quick Launch retains icon navigation and adds dedicated page keys beside the vertical
+ * arrows so users can page without losing the focused icon required for editing (issue #7).
+ */
 private fun keypadLabels(state: LauncherUiState): List<KeyLabel> = when (state.screen) {
     LauncherScreen.Home, LauncherScreen.Dialer -> KeyLabels
     LauncherScreen.Search -> if (state.searchMode == SearchMode.Entry) KeyLabels else VerticalNavigationKeyLabels
-    LauncherScreen.QuickLaunch, LauncherScreen.Settings -> NavigationKeyLabels
+    LauncherScreen.QuickLaunch -> if (state.settings.touchToLaunchShortcuts) TouchQuickLaunchKeyLabels else NavigationKeyLabels
+    LauncherScreen.Settings -> NavigationKeyLabels
     LauncherScreen.FavoriteEditor -> when (state.editorMode) {
         FavoriteEditorMode.Overview -> VerticalNavigationKeyLabels
         FavoriteEditorMode.IconPicker, FavoriteEditorMode.Move -> NavigationKeyLabels
@@ -1104,7 +1173,9 @@ private fun KeypadKey(key: KeyLabel, controller: LauncherController, modifier: M
     val enabled = key.primary.isNotBlank()
     val haptics = LocalHapticFeedback.current
     val supportsLongPress = key.primary == "OK" && controller.state.screen == LauncherScreen.QuickLaunch
-    val primaryWeight = if (key.primary in setOf("↑", "↓", "←", "→")) FontWeight.ExtraBold else FontWeight.Bold
+    val isPageKey = key.primary in setOf("PG↑", "PG↓")
+    val primaryWeight = if (key.primary in setOf("↑", "↓", "←", "→") || isPageKey) FontWeight.ExtraBold else FontWeight.Bold
+    val primarySize = if (isPageKey) 16.sp else 28.sp
     Surface(
         modifier = modifier
             .fillMaxSize()
@@ -1136,7 +1207,7 @@ private fun KeypadKey(key: KeyLabel, controller: LauncherController, modifier: M
                 text = key.primary,
                 modifier = Modifier.align(Alignment.Center),
                 color = FlipColors.KeyText,
-                fontSize = 28.sp,
+                fontSize = primarySize,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = primaryWeight,
                 textAlign = TextAlign.Center,

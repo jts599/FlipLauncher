@@ -115,6 +115,39 @@ class LauncherNavigationTest {
         assertEquals(2, result.selectedFavoriteIndex)
     }
 
+    /** Confirms touch-mode page keys preserve focus while directional keys still navigate the grid. */
+    @Test
+    fun touchShortcutsSupportFocusedGridNavigationAndPaging() {
+        val favorites = FavoriteTargets.defaults()
+        val state = LauncherUiState(
+            screen = LauncherScreen.QuickLaunch,
+            selectedFavoriteIndex = 2,
+            settings = LauncherSettings(touchToLaunchShortcuts = true),
+        )
+
+        val nextGridRow = reduceNavigation(state, NavigationDirection.Down, favorites)
+        val nextPage = moveFavoritePageIndex(state.selectedFavoriteIndex, NavigationDirection.Down, favorites.size)
+        val previousPage = moveFavoritePageIndex(nextPage, NavigationDirection.Up, favorites.size)
+
+        assertEquals(5, nextGridRow.selectedFavoriteIndex)
+        assertEquals(QuickLaunchPageSize + 2, nextPage)
+        assertEquals(2, previousPage)
+    }
+
+    /** Confirms dedicated page labels are handled only after touch-mode Quick Launch is enabled. */
+    @Test
+    fun touchShortcutsUseDedicatedPageKeys() {
+        val controller = controller()
+        controller.pressSoftAction(SoftAction.Settings)
+        controller.pressKey("↓")
+        controller.pressKey("OK")
+        controller.pressSoftAction(SoftAction.Quick)
+
+        controller.pressKey("PG↓")
+
+        assertEquals(QuickLaunchPageSize, controller.state.selectedFavoriteIndex)
+    }
+
     /** Confirms Back from name entry restores the value present before the keyboard opened. */
     @Test
     fun backFromNameEditingRevertsTypedText() {
