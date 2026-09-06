@@ -38,7 +38,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.ModalBottomSheet
@@ -456,7 +455,7 @@ private fun SearchLcdContent(state: LauncherUiState, apps: List<LaunchableApp>, 
             if (apps.isEmpty()) SearchEmptyState()
             state.message?.let { LcdMessage(it) }
         }
-        QuickLaunchPageIndicator(
+        PageIndicator(
             pageIndex = firstVisibleIndex / SearchResultWindowSize,
             pageCount = itemPageCount(apps.size, SearchResultWindowSize),
             modifier = Modifier.align(Alignment.CenterEnd),
@@ -569,7 +568,7 @@ private fun QuickLaunchLcdContent(
             }
             state.message?.let { LcdMessage(it) }
         }
-        QuickLaunchPageIndicator(
+        PageIndicator(
             pageIndex = pageIndex,
             pageCount = pageCount,
             modifier = Modifier.align(Alignment.CenterEnd),
@@ -582,28 +581,6 @@ private fun List<QuickLaunchFavorite>.pageCount(): Int = (size + QuickLaunchPage
 
 /** Returns the number of fixed-size pages needed to display an item count. */
 private fun itemPageCount(itemCount: Int, pageSize: Int): Int = (itemCount + pageSize - 1) / pageSize
-
-/**
- * Draws a compact page indicator only when the favorite grid overflows one LCD page.
- *
- * @param pageIndex Zero-based page containing the selected favorite.
- * @param pageCount Number of available pages; one or fewer hides the indicator.
- * @param modifier Positions the dot rail alongside the app grid.
- */
-@Composable
-private fun QuickLaunchPageIndicator(pageIndex: Int, pageCount: Int, modifier: Modifier = Modifier) {
-    if (pageCount <= 1) return
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        repeat(pageCount) { index ->
-            Box(
-                modifier = Modifier
-                    .size(5.dp)
-                    .clip(CircleShape)
-                    .background(FlipColors.ScreenInk.copy(alpha = if (index == pageIndex) 1f else 0.35f)),
-            )
-        }
-    }
-}
 
 /** Renders the two launcher-wide preferences as bold keypad-focused rows. */
 @Composable
@@ -719,7 +696,7 @@ private fun FavoriteIconPickerLcdContent(state: LauncherUiState, modifier: Modif
                 }
             }
         }
-        QuickLaunchPageIndicator(pageIndex, itemPageCount(icons.size, FavoriteIconPageSize), Modifier.align(Alignment.CenterEnd))
+        PageIndicator(pageIndex, itemPageCount(icons.size, FavoriteIconPageSize), Modifier.align(Alignment.CenterEnd))
     }
 }
 
@@ -756,7 +733,7 @@ private fun FavoriteMoveLcdContent(state: LauncherUiState, favorites: List<Quick
             }
             LcdMessage("ARROWS TO MOVE")
         }
-        QuickLaunchPageIndicator(pageIndex, favorites.pageCount(), Modifier.align(Alignment.CenterEnd))
+        PageIndicator(pageIndex, favorites.pageCount(), Modifier.align(Alignment.CenterEnd))
     }
 }
 
