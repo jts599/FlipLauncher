@@ -1,13 +1,12 @@
-/** Compose regressions for constrained page rails, filtering, and overflow selection. */
+/** Compose regressions for the capped launcher page rail. */
 package com.fliplauncher.app.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
@@ -15,7 +14,6 @@ import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.Density
 import org.junit.Rule
 import org.junit.Test
 
@@ -24,68 +22,42 @@ class PageIndicatorLayoutTest {
     @get:Rule
     val compose = createComposeRule()
 
-    /** Verifies full dots and selection beyond overflow; returns Unit, with assertion failures only. */
+    /** Confirms ten logical pages are represented by eight fixed-size dots. */
     @Test
-    fun constrainedRailKeepsDotsWholeAndOverflowSelected() {
-        val page = mutableIntStateOf(1)
-        compose.setContent { TestRail(23, page.intValue, 10) }
-        compose.onNodeWithContentDescription("Page 2")
+    fun cappedRailGroupsExtraPagesIntoDots() {
+        val page = mutableIntStateOf(0)
+        compose.setContent { TestRail(page.intValue, 10) }
+        compose.onNodeWithContentDescription("Pages 1–2")
             .assertHeightIsEqualTo(5.dp).assertWidthIsEqualTo(5.dp).assertIsSelected()
-        compose.onNodeWithContentDescription("Pages 3–10")
-            .assertHeightIsEqualTo(2.dp).assertWidthIsEqualTo(5.dp).assertIsNotSelected()
-        for (index in listOf(2, 5, 9)) {
-            compose.runOnIdle { page.intValue = index }
-            compose.onNodeWithContentDescription("Pages 3–10").assertIsSelected()
-        }
-        compose.runOnIdle { page.intValue = 0 }
-        compose.onNodeWithContentDescription("Page 1").assertIsSelected()
-        compose.onNodeWithContentDescription("Pages 3–10").assertIsNotSelected()
+        compose.runOnIdle { page.intValue = 1 }
+        compose.onNodeWithContentDescription("Pages 1–2").assertIsSelected()
+        compose.runOnIdle { page.intValue = 2 }
+        compose.onNodeWithContentDescription("Pages 1–2").assertIsNotSelected()
+        compose.onNodeWithContentDescription("Page 3").assertIsSelected()
+        compose.onNodeWithContentDescription("Page 10").assertWidthIsEqualTo(5.dp)
     }
 
-    /** Verifies filtering recalculates markers; returns Unit, mutating local state with assertion failures only. */
+    /** Confirms reducing page count removes bucket labels and hides single-page rails. */
     @Test
-    fun filteringRemovesOverflowWhenPagesFit() {
+    fun filteringUsesOneDotPerRemainingPage() {
         val count = mutableIntStateOf(10)
-        compose.setContent { TestRail(23, 0, count.intValue) }
+        compose.setContent { TestRail(0, count.intValue) }
         compose.runOnIdle { count.intValue = 3 }
-        compose.onNodeWithContentDescription("Pages 3–10").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Pages 1–2").assertDoesNotExist()
         compose.onNodeWithContentDescription("Page 3").assertHeightIsEqualTo(5.dp)
         compose.runOnIdle { count.intValue = 1 }
         compose.onNodeWithContentDescription("Page 1").assertDoesNotExist()
     }
-
-    /** Verifies minimal height shows a line without dots; returns Unit, with assertion failures only. */
-    @Test
-    fun tinyRailShowsOnlyOverflow() {
-        compose.setContent { TestRail(2, 9, 10) }
-        compose.onNodeWithContentDescription("Pages 1–10").assertHeightIsEqualTo(2.dp).assertIsSelected()
-        compose.onNodeWithContentDescription("Page 1").assertDoesNotExist()
-    }
-
-    /** Verifies resizing updates capacity and hides a line that cannot fit; returns Unit, with assertion failures only. */
-    @Test
-    fun resizingRecalculatesAvailableMarkers() {
-        val height = mutableIntStateOf(23)
-        compose.setContent { TestRail(height.intValue, 9, 10) }
-        compose.runOnIdle { height.intValue = 32 }
-        compose.onNodeWithContentDescription("Page 3").assertHeightIsEqualTo(5.dp)
-        compose.onNodeWithContentDescription("Pages 4–10").assertIsSelected()
-        compose.onNodeWithContentDescription("Pages 3–10").assertDoesNotExist()
-        compose.runOnIdle { height.intValue = 1 }
-        compose.onNodeWithContentDescription("Pages 1–10").assertDoesNotExist()
-    }
 }
 
 /**
- * Hosts a rail at a deterministic density so capacity expectations do not depend on the test device.
- * @param height Required nonnegative available height in dp.
- * @param page Required valid zero-based selected page.
- * @param count Required nonnegative total pages.
+ * Hosts a rail with ample height for all eight capped dots.
+ *
+ * @param page Required zero-based selected page.
+ * @param count Required nonnegative total page count.
  * @return Unit. Emits test UI only, with no expected errors or external effects.
  */
 @Composable
-private fun TestRail(height: Int, page: Int, count: Int) {
-    CompositionLocalProvider(LocalDensity provides Density(1f)) {
-        Box(Modifier.size(5.dp, height.dp)) { PageIndicator(page, count) }
-    }
+private fun TestRail(page: Int, count: Int) {
+    Box(Modifier.size(5.dp, 68.dp)) { PageIndicator(page, count) }
 }

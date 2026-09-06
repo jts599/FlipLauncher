@@ -1,47 +1,37 @@
-/** Regression coverage for page rail capacity and overflow selection from issue #6. */
+/** Regression coverage for the capped page indicator. */
 package com.fliplauncher.app.ui
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Exercises pure indicator rules without platform state or external side effects. */
+/** Exercises pure bounded-dot rules without platform state or external side effects. */
 class PageIndicatorTest {
-    /** Checks exact fit, spare height, and unbounded constraints; returns Unit, with assertion failures only. */
+    /** Confirms the rail shows one dot per page until reaching the eight-dot cap. */
     @Test
-    fun completeDotsFitAvailableHeight() {
-        assertEquals(3, visiblePageDotCount(3, 23f))
-        assertEquals(3, visiblePageDotCount(3, 100f))
-        assertEquals(3, visiblePageDotCount(3, Float.POSITIVE_INFINITY))
+    fun dotCountIsCappedAtEight() {
+        assertEquals(0, pageIndicatorDotCount(0))
+        assertEquals(0, pageIndicatorDotCount(1))
+        assertEquals(3, pageIndicatorDotCount(3))
+        assertEquals(8, pageIndicatorDotCount(8))
+        assertEquals(8, pageIndicatorDotCount(100))
     }
 
-    /** Checks overflow reservation at the capacity boundary; returns Unit, with assertion failures only. */
+    /** Confirms logical pages share a dot when their count exceeds the cap. */
     @Test
-    fun overflowReservesOneMarkerSlot() {
-        assertEquals(2, visiblePageDotCount(4, 23f))
-        assertEquals(2, visiblePageDotCount(100, 23f))
-        assertEquals(1, visiblePageDotCount(3, 22f))
-        assertEquals(1, visiblePageDotCount(3, 63f, markerSize = 14f, spacing = 11f))
+    fun extraPagesAdvanceTheSelectedDotInBuckets() {
+        assertEquals(0, selectedPageDotIndex(0, 10))
+        assertEquals(0, selectedPageDotIndex(1, 10))
+        assertEquals(1, selectedPageDotIndex(2, 10))
+        assertEquals(4, selectedPageDotIndex(5, 10))
+        assertEquals(7, selectedPageDotIndex(9, 10))
     }
 
-    /** Checks hidden and line-only rails; returns Unit, with assertion failures only. */
+    /** Confirms accessibility labels describe every logical page represented by a dot. */
     @Test
-    fun minimalLayoutsHaveNoDots() {
-        assertEquals(0, visiblePageDotCount(0, 100f))
-        assertEquals(0, visiblePageDotCount(1, 100f))
-        listOf(0f, 1f, 2f, 4f, 5f).forEach { height ->
-            assertEquals(0, visiblePageDotCount(10, height))
-        }
-    }
-
-    /** Checks selection entering and leaving overflow; returns Unit, with assertion failures only. */
-    @Test
-    fun everyHiddenPageSelectsOverflow() {
-        assertFalse(isPageOverflowSelected(1, 2))
-        assertTrue(isPageOverflowSelected(2, 2))
-        assertTrue(isPageOverflowSelected(99, 2))
-        assertFalse(isPageOverflowSelected(0, 2))
-        assertTrue(isPageOverflowSelected(0, 0))
+    fun dotDescriptionsNameTheirPageRanges() {
+        assertEquals("Pages 1–2", pageDotDescription(0, 10))
+        assertEquals("Page 3", pageDotDescription(1, 10))
+        assertEquals("Pages 6–7", pageDotDescription(4, 10))
+        assertEquals("Page 10", pageDotDescription(7, 10))
     }
 }

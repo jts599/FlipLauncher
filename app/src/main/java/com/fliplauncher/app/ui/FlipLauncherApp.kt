@@ -186,6 +186,12 @@ private val VerticalNavigationKeyLabels = listOf(
     KeyLabel(""), KeyLabel("↓"), KeyLabel(""),
     KeyLabel(""), KeyLabel(""), KeyLabel(""),
 )
+private val PagingNavigationKeyLabels = listOf(
+    KeyLabel(""), KeyLabel("↑"), KeyLabel(""),
+    KeyLabel(""), KeyLabel(""), KeyLabel(""),
+    KeyLabel(""), KeyLabel("↓"), KeyLabel(""),
+    KeyLabel(""), KeyLabel(""), KeyLabel(""),
+)
 private val DisabledKeyLabels = List(12) { KeyLabel("") }
 private val ConfirmationKeyLabels = listOf(
     KeyLabel(""), KeyLabel(""), KeyLabel(""),
@@ -1145,13 +1151,13 @@ private fun Keypad(controller: LauncherController, modifier: Modifier = Modifier
 /**
  * Returns only the physical controls that have meaning in the current launcher mode.
  *
- * Touch-mode Quick Launch exposes vertical page navigation only because individual icon focus is
- * intentionally disabled (issue #7).
+ * Touch-mode Quick Launch exposes only vertical page navigation because touch performs launching
+ * and individual icon focus is intentionally disabled (issue #7).
  */
 private fun keypadLabels(state: LauncherUiState): List<KeyLabel> = when (state.screen) {
     LauncherScreen.Home, LauncherScreen.Dialer -> KeyLabels
     LauncherScreen.Search -> if (state.searchMode == SearchMode.Entry) KeyLabels else VerticalNavigationKeyLabels
-    LauncherScreen.QuickLaunch -> if (state.settings.touchToLaunchShortcuts) VerticalNavigationKeyLabels else NavigationKeyLabels
+    LauncherScreen.QuickLaunch -> if (state.settings.touchToLaunchShortcuts) PagingNavigationKeyLabels else NavigationKeyLabels
     LauncherScreen.Settings -> NavigationKeyLabels
     LauncherScreen.FavoriteEditor -> when (state.editorMode) {
         FavoriteEditorMode.Overview -> VerticalNavigationKeyLabels
