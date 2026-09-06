@@ -1,8 +1,6 @@
 /** Provides pure state transitions for FlipLauncher's keypad-driven navigation. */
 package com.fliplauncher.app.ui
 
-private const val QuickLaunchColumnCount = 3
-
 /** Identifies directional input from the navigation keypad. */
 internal enum class NavigationDirection { Up, Down, Left, Right }
 
@@ -28,14 +26,7 @@ internal fun reduceNavigation(
     favorites: List<QuickLaunchFavorite>,
 ): LauncherUiState = when (state.screen) {
     LauncherScreen.Search -> reduceSearchNavigation(state, direction)
-    LauncherScreen.QuickLaunch -> state.copy(
-        selectedFavoriteIndex = moveGridIndex(
-            index = state.selectedFavoriteIndex,
-            direction = direction,
-            itemCount = favorites.size,
-            columnCount = QuickLaunchColumnCount,
-        ),
-    )
+    LauncherScreen.QuickLaunch -> reduceQuickLaunchNavigation(state, direction, favorites.size)
     LauncherScreen.Settings -> state.copy(selectedSettingIndex = moveSettingIndex(state.selectedSettingIndex, direction))
     LauncherScreen.FavoriteEditor -> when (state.editorMode) {
         FavoriteEditorMode.IconPicker -> reduceIconPickerNavigation(state, direction)
@@ -81,6 +72,51 @@ private fun reduceSearchNavigation(state: LauncherUiState, direction: Navigation
         NavigationDirection.Left, NavigationDirection.Right -> 0
     }
     return state.copy(selectedSearchIndex = (state.selectedSearchIndex + offset).coerceAtLeast(0))
+}
+
+/**
+ * Applies Quick Launch navigation for the selected input style.
+ *
+ * @param state Current Quick Launch state, including the selected favorite used to derive its page.
+ * @param direction Keypad direction supplied by the user.
+ * @param favoriteCount Number of configured favorites; zero preserves the default index.
+ * @return Updated state with either a grid neighbor or the first item of an adjacent touch page.
+ * @throws None.
+ * @sideEffects None; returns an immutable state copy.
+ */
+private fun reduceQuickLaunchNavigation(
+    state: LauncherUiState,
+    direction: NavigationDirection,
+    favoriteCount: Int,
+): LauncherUiState {
+    val selectedIndex = if (state.settings.touchToLaunchShortcuts) {
+        moveQuickLaunchPage(state.selectedFavoriteIndex, direction, favoriteCount)
+    } else {
+        moveGridIndex(state.selectedFavoriteIndex, direction, favoriteCount, QuickLaunchColumnCount)
+    }
+    return state.copy(selectedFavoriteIndex = selectedIndex)
+}
+
+/**
+ * Moves between whole Quick Launch pages for touch-first shortcut launching.
+ *
+ * @param selectedIndex Current selected index, used only to identify the visible page.
+ * @param direction Keypad direction; Down advances a page, Up returns a page, and horizontal input is ignored.
+ * @param favoriteCount Number of configured favorites; zero produces index zero.
+ * @return The first favorite index on the requested page, or the current page's first index at a boundary.
+ * @throws None.
+ * @sideEffects None.
+ */
+private fun moveQuickLaunchPage(selectedIndex: Int, direction: NavigationDirection, favoriteCount: Int): Int {
+    if (favoriteCount == 0) return 0
+    val pageCount = (favoriteCount + QuickLaunchPageSize - 1) / QuickLaunchPageSize
+    val currentPage = selectedIndex.coerceIn(0, favoriteCount - 1) / QuickLaunchPageSize
+    val targetPage = when (direction) {
+        NavigationDirection.Up -> (currentPage - 1).coerceAtLeast(0)
+        NavigationDirection.Down -> (currentPage + 1).coerceAtMost(pageCount - 1)
+        NavigationDirection.Left, NavigationDirection.Right -> currentPage
+    }
+    return targetPage * QuickLaunchPageSize
 }
 
 /** Moves focus through the three vertically arranged setting rows. */

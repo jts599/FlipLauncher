@@ -164,8 +164,6 @@ import java.util.Date
 
 private const val MillisPerMinute = 60_000L
 private const val UnknownBatteryLevel = -1
-private const val QuickLaunchColumnCount = 3
-private const val QuickLaunchPageSize = 6
 private const val SearchResultWindowSize = 4
 private const val FavoriteIconPageSize = 12
 private val CellSignalBarHeights = listOf(6.dp, 10.dp, 14.dp, 18.dp)
@@ -549,7 +547,7 @@ private fun SearchEmptyState() {
 /**
  * Renders the Quick Launch grid as large, centered app icons with compact labels.
  *
- * @param state Current launcher state; its selected favorite index receives the focus treatment.
+ * @param state Current launcher state; its selected favorite determines the page and receives focus outside touch mode.
  * @param favorites Configured Quick Launch entries, displayed in a two-column grid.
  * @param modifier Layout constraints supplied by the LCD container.
  */
@@ -577,7 +575,8 @@ private fun QuickLaunchLcdContent(
                         } else {
                             FavoriteLcdTile(
                                 favorite = favorite,
-                                focused = firstItemIndex + rowIndex * QuickLaunchColumnCount + columnIndex == state.selectedFavoriteIndex,
+                                focused = !state.settings.touchToLaunchShortcuts &&
+                                    firstItemIndex + rowIndex * QuickLaunchColumnCount + columnIndex == state.selectedFavoriteIndex,
                                 modifier = Modifier.weight(1f),
                                 onClick = { onFavoriteTap(firstItemIndex + rowIndex * QuickLaunchColumnCount + columnIndex) },
                                 touchEnabled = state.settings.touchToLaunchShortcuts,
@@ -1111,11 +1110,17 @@ private fun Keypad(controller: LauncherController, modifier: Modifier = Modifier
     }
 }
 
-/** Returns only the physical controls that have meaning in the current launcher mode. */
+/**
+ * Returns only the physical controls that have meaning in the current launcher mode.
+ *
+ * Touch-mode Quick Launch exposes vertical page navigation only because individual icon focus is
+ * intentionally disabled (issue #7).
+ */
 private fun keypadLabels(state: LauncherUiState): List<KeyLabel> = when (state.screen) {
     LauncherScreen.Home, LauncherScreen.Dialer -> KeyLabels
     LauncherScreen.Search -> if (state.searchMode == SearchMode.Entry) KeyLabels else VerticalNavigationKeyLabels
-    LauncherScreen.QuickLaunch, LauncherScreen.Settings -> NavigationKeyLabels
+    LauncherScreen.QuickLaunch -> if (state.settings.touchToLaunchShortcuts) VerticalNavigationKeyLabels else NavigationKeyLabels
+    LauncherScreen.Settings -> NavigationKeyLabels
     LauncherScreen.FavoriteEditor -> when (state.editorMode) {
         FavoriteEditorMode.Overview -> VerticalNavigationKeyLabels
         FavoriteEditorMode.IconPicker, FavoriteEditorMode.Move -> NavigationKeyLabels

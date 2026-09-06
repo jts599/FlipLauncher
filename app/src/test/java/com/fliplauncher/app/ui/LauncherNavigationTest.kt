@@ -115,6 +115,25 @@ class LauncherNavigationTest {
         assertEquals(2, result.selectedFavoriteIndex)
     }
 
+    /** Confirms touch-first shortcuts page vertically without selecting individual grid entries. */
+    @Test
+    fun touchShortcutsNavigateBetweenWholePages() {
+        val favorites = FavoriteTargets.defaults()
+        val state = LauncherUiState(
+            screen = LauncherScreen.QuickLaunch,
+            selectedFavoriteIndex = 2,
+            settings = LauncherSettings(touchToLaunchShortcuts = true),
+        )
+
+        val nextPage = reduceNavigation(state, NavigationDirection.Down, favorites)
+        val previousPage = reduceNavigation(nextPage, NavigationDirection.Up, favorites)
+        val ignoredHorizontalInput = reduceNavigation(nextPage, NavigationDirection.Right, favorites)
+
+        assertEquals(QuickLaunchPageSize, nextPage.selectedFavoriteIndex)
+        assertEquals(0, previousPage.selectedFavoriteIndex)
+        assertEquals(QuickLaunchPageSize, ignoredHorizontalInput.selectedFavoriteIndex)
+    }
+
     /** Confirms Back from name entry restores the value present before the keyboard opened. */
     @Test
     fun backFromNameEditingRevertsTypedText() {

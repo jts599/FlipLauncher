@@ -6,6 +6,12 @@
  */
 package com.fliplauncher.app.ui
 
+/** Number of columns used by every Quick Launch grid. */
+internal const val QuickLaunchColumnCount = 3
+
+/** Number of favorites displayed on one Quick Launch LCD page. */
+internal const val QuickLaunchPageSize = 6
+
 /** Identifies the complete LCD view currently displayed by the launcher. */
 internal enum class LauncherScreen {
     Home,
