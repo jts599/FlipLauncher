@@ -166,6 +166,7 @@ private const val MillisPerMinute = 60_000L
 private const val UnknownBatteryLevel = -1
 private const val SearchResultWindowSize = 4
 private const val FavoriteIconPageSize = 12
+private val ScreenActionHeight = 42.dp
 private val CellSignalBarHeights = listOf(6.dp, 10.dp, 14.dp, 18.dp)
 private val KeyLabels = listOf(
     KeyLabel("1"), KeyLabel("2", "ABC"), KeyLabel("3", "DEF"),
@@ -296,7 +297,7 @@ private fun DisplayPanel(status: LauncherStatus, controller: LauncherController,
     }
 }
 
-/** Draws the LCD texture, status values, and inactive screen-action glyphs. */
+/** Draws the LCD texture, status values, and soft-key glyphs in separate, non-overlapping regions. */
 @Composable
 private fun ScreenSurface(status: LauncherStatus, controller: LauncherController) {
     Box(
@@ -318,7 +319,15 @@ private fun ScreenSurface(status: LauncherStatus, controller: LauncherController
                 .align(Alignment.TopEnd)
                 .padding(end = 16.dp, top = 14.dp),
         )
-        LauncherLcdContent(status, controller, Modifier.align(Alignment.Center).padding(horizontal = 14.dp, vertical = 38.dp))
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxSize()
+                .padding(start = 14.dp, top = 38.dp, end = 14.dp, bottom = ScreenActionHeight),
+            contentAlignment = Alignment.Center,
+        ) {
+            LauncherLcdContent(status, controller, Modifier)
+        }
         ScreenActions(softActions(controller.state), controller.state, modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
@@ -457,6 +466,7 @@ private fun HomeLcdContent(status: LauncherStatus, message: String?, modifier: M
 @Composable
 private fun SearchLcdContent(state: LauncherUiState, apps: List<LaunchableApp>, modifier: Modifier) {
     val firstVisibleIndex = searchResultWindowStart(state.selectedSearchIndex, state.searchMode)
+    val visibleApps = apps.drop(firstVisibleIndex).take(SearchResultWindowSize)
     Box(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier.fillMaxSize().padding(end = 11.dp),
@@ -464,13 +474,23 @@ private fun SearchLcdContent(state: LauncherUiState, apps: List<LaunchableApp>, 
             horizontalAlignment = Alignment.Start,
         ) {
             SearchField(state.searchDigits, state.settings.searchKeyboardFormat)
-            apps.drop(firstVisibleIndex).take(SearchResultWindowSize).forEachIndexed { index, app ->
-                SearchResultRow(
-                    label = app.label,
-                    focused = state.searchMode == SearchMode.Results && firstVisibleIndex + index == state.selectedSearchIndex,
-                )
+            if (visibleApps.isEmpty()) {
+                SearchEmptyState(Modifier.weight(1f))
+                repeat(SearchResultWindowSize - 1) { Spacer(Modifier.weight(1f)) }
+            } else {
+                repeat(SearchResultWindowSize) { index ->
+                    val app = visibleApps.getOrNull(index)
+                    if (app == null) {
+                        Spacer(Modifier.weight(1f))
+                        return@repeat
+                    }
+                    SearchResultRow(
+                        label = app.label,
+                        focused = state.searchMode == SearchMode.Results && firstVisibleIndex + index == state.selectedSearchIndex,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
-            if (apps.isEmpty()) SearchEmptyState()
             state.message?.let { LcdMessage(it) }
         }
         PageIndicator(
@@ -512,15 +532,22 @@ private fun SearchField(query: String, format: SearchKeyboardFormat) {
     }
 }
 
-/** Draws one fixed-height search result with an inverse LCD treatment when focused. */
+/**
+ * Draws one search result at the height allocated by its paged result slot.
+ *
+ * @param label Result label displayed to the user.
+ * @param focused Whether keypad navigation currently targets this result.
+ * @param modifier Layout constraints from the fixed four-row search result area.
+ * @return Unit. Emits Compose UI only; no external effects or expected errors.
+ */
 @Composable
-private fun SearchResultRow(label: String, focused: Boolean) {
+private fun SearchResultRow(label: String, focused: Boolean, modifier: Modifier = Modifier) {
     val background = if (focused) FlipColors.ScreenInk else Color.Transparent
     val foreground = if (focused) FlipColors.ScreenTop else FlipColors.ScreenInk
     Row(
         modifier = Modifier
+            .then(modifier)
             .fillMaxWidth()
-            .height(27.dp)
             .background(background, RoundedCornerShape(2.dp))
             .padding(horizontal = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -531,12 +558,17 @@ private fun SearchResultRow(label: String, focused: Boolean) {
     }
 }
 
-/** Displays concise feedback below the search field when the current query has no matches. */
+/**
+ * Displays concise feedback in an empty search result area.
+ *
+ * @param modifier Layout constraints supplied by the first reserved search result slot.
+ * @return Unit. Emits Compose UI only; no external effects or expected errors.
+ */
 @Composable
-private fun SearchEmptyState() {
+private fun SearchEmptyState(modifier: Modifier = Modifier) {
     Text(
         text = "NO APPS FOUND",
-        modifier = Modifier.padding(horizontal = 7.dp, vertical = 6.dp),
+        modifier = modifier.padding(horizontal = 7.dp, vertical = 6.dp),
         color = FlipColors.ScreenInk.copy(alpha = 0.68f),
         fontSize = 10.sp,
         fontWeight = FontWeight.Bold,
@@ -704,7 +736,7 @@ private fun FavoriteIconPickerLcdContent(state: LauncherUiState, modifier: Modif
     val icons = FavoriteIcon.values().toList()
     val pageIndex = state.selectedFavoriteIconIndex / FavoriteIconPageSize
     val firstIconIndex = pageIndex * FavoriteIconPageSize
-    Box(modifier.fillMaxWidth()) {
+    Box(modifier.fillMaxSize()) {
         FavoriteIconPickerGrid(
             icons = icons.drop(firstIconIndex).take(FavoriteIconPageSize),
             firstIconIndex = firstIconIndex,
@@ -731,9 +763,9 @@ internal fun FavoriteIconPickerGrid(
     selectedIconIndex: Int,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    Column(modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
         icons.chunked(QuickLaunchColumnCount).forEachIndexed { rowIndex, row ->
-            Row(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().weight(1f)) {
                 repeat(QuickLaunchColumnCount) { columnIndex ->
                     val icon = row.getOrNull(columnIndex)
                     if (icon == null) {
@@ -752,7 +784,7 @@ internal fun FavoriteIconPickerGrid(
 @Composable
 private fun IconPickerCell(icon: FavoriteIcon, selected: Boolean, modifier: Modifier = Modifier) {
     Box(
-        modifier = modifier.height(40.dp).padding(horizontal = 4.dp)
+        modifier = modifier.fillMaxHeight().padding(horizontal = 4.dp)
             .semantics { contentDescription = "${icon.name} icon" }
             .then(if (selected) Modifier.border(1.dp, FlipColors.ScreenInk, RoundedCornerShape(4.dp)) else Modifier),
         contentAlignment = Alignment.Center,
@@ -981,7 +1013,7 @@ private fun ScreenActions(actions: List<SoftAction>, state: LauncherUiState, mod
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(42.dp)
+            .height(ScreenActionHeight)
             .topBorder(FlipColors.ScreenInk.copy(alpha = 0.38f)),
     ) {
         actions.forEachIndexed { index, action ->
